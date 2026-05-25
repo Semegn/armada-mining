@@ -517,12 +517,18 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
   const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
 
+  const reasons = [];
+  if (cashOnHand < Number(inputs.target_cash_reserve)) reasons.push('Cash');
+  if (fuelRemainingBarrels < 7) reasons.push('Fuel');
+  if (machineHrsRemaining < 100) reasons.push('Machine Hrs');
+  if (profit < 0) reasons.push('Profit');
+
   let status = 'healthy';
   if (fuelRemainingBarrels < 7 || machineHrsRemaining < 100 || cashOnHand < Number(inputs.target_cash_reserve)) status = 'caution';
   if (fuelRemainingBarrels < 3 || machineHrsRemaining < 50 || profit < 0) status = 'critical';
 
   return {
-    weekEnd, status,
+    weekEnd, status, reasons,
     fuelRemainingBarrels, machineHrsRemaining,
     grossGold, netSaleableGold, cleaningHrs, prepHrs, totalHrs,
     avgGperHr: totalHrs > 0 ? grossGold / totalHrs : 0,
@@ -583,6 +589,7 @@ function WeeklyReport({ inputs, logs, transactions }) {
               <div>
                 <div className={`text-xs uppercase tracking-widest font-semibold ${sc.text}`}>
                   {t('status.endOfWeekStatus')}: {t(`status.${snap.status}`)}
+                  {snap.reasons.length > 0 && ` (${snap.reasons.join(', ')})`}
                 </div>
                 <div className="text-xs text-stone-600 mt-0.5">
                   {snap.logCount} {t('status.logs')} · {snap.txCount} {t('status.transactions')} · {t('weekly.through')} {snap.weekEnd}
@@ -692,7 +699,13 @@ function Dashboard({ site, inputs, logs, transactions }) {
       ? Math.min(fuelRunwayDays, machineRunwayDays)
       : (fuelRunwayDays ?? machineRunwayDays);
 
-    // Status
+    // Status + reasons
+    const reasons = [];
+    if (cashOnHand < Number(inputs.target_cash_reserve)) reasons.push('Cash');
+    if (fuelRemainingBarrels < 7) reasons.push('Fuel');
+    if (machineHrsRemaining < 100) reasons.push('Machine Hrs');
+    if (profit < 0) reasons.push('Profit');
+
     let status = 'healthy';
     if (fuelRemainingBarrels < 7 || machineHrsRemaining < 100 || cashOnHand < Number(inputs.target_cash_reserve)) status = 'caution';
     if (fuelRemainingBarrels < 3 || machineHrsRemaining < 50 || profit < 0) status = 'critical';
@@ -705,7 +718,7 @@ function Dashboard({ site, inputs, logs, transactions }) {
       fuelRunwayDays, machineRunwayDays, wcRunway,
       totalHrs, cleaningHrs, prepHrs,
       avgGperHr: totalHrs > 0 ? grossGold / totalHrs : 0,
-      status,
+      status, reasons,
       logCount: logs.length,
       txCount: transactions.length,
     };
@@ -721,7 +734,10 @@ function Dashboard({ site, inputs, logs, transactions }) {
       <div className={`${sc.bg} ${sc.border} border-l-4 px-4 py-3 flex items-center gap-3`}>
         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sc.dot}`} />
         <div>
-          <div className={`text-xs uppercase tracking-widest font-semibold ${sc.text}`}>{t('status.siteStatus')}: {t(`status.${calc.status}`)}</div>
+          <div className={`text-xs uppercase tracking-widest font-semibold ${sc.text}`}>
+            {t('status.siteStatus')}: {t(`status.${calc.status}`)}
+            {calc.reasons.length > 0 && ` (${calc.reasons.join(', ')})`}
+          </div>
           <div className="text-xs text-stone-600 mt-0.5">
             {t('status.lastLog')}: {calc.latestLogDate || t('status.noLogsYet')} · {calc.logCount} {t('status.logs')} · {calc.txCount} {t('status.transactions')}
           </div>
