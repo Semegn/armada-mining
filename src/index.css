@@ -2,13 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
+  padding: 0;
 }
 
 body {
   font-family: 'JetBrains Mono', monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #faf5f0;
+  color: #1c1917;
+  overflow: hidden;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+  
+  input, select, textarea, button {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+}
+
+/* Prevent bounce scroll on iOS */
+html {
+  overscroll-behavior: none;
+}
+
+/* Input autofill colors */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px white inset !important;
+  -webkit-text-fill-color: #1c1917 !important;
 }
