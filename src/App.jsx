@@ -26,7 +26,10 @@ const weekStart = (dateStr) => {
 
 const CATEGORIES = [
   'Fuel', 'Machine Rental', 'Crew Salaries', 'Accommodation & Food',
-  'Vehicle / Site Support', 'Transport', 'Maintenance', 'Other', 'Profit Share'
+  'Vehicle / Site Support', 'Transport', 'Maintenance',
+  'Government', 'Royalty', 'Commission', 'Medical',
+  'Utilities', 'Asset Purchase', 'Loan Return',
+  'Other', 'Profit Share',
 ];
 
 const CREDIT_CATEGORIES = ['Gold Sale', 'Loan', 'Investment', 'Other Income'];
@@ -63,11 +66,12 @@ const EN_STRINGS = {
   // Daily Logs
   'daily.title': 'Daily Logs', 'daily.entries': 'entries', 'daily.newLog': '+ New Log', 'daily.cancel': 'Cancel',
   'daily.date': 'Date', 'daily.goldProduced': 'Gold Produced (g)', 'daily.cleaningHours': 'Cleaning Hours',
-  'daily.prepHours': 'Prep Hours', 'daily.fuelReceived': 'Fuel Received (barrels)',
-  'daily.machineTopUp': 'Machine Hrs Topped Up', 'daily.notes': 'Notes',
+  'daily.prepHours': 'Prep Hours', 'daily.idleHours': 'Idle Hours (charged)',
+  'daily.fuelReceived': 'Fuel Received (barrels)', 'daily.notes': 'Notes',
   'daily.saveLog': 'Save Log', 'daily.saving': 'Saving…', 'daily.noLogs': 'No logs yet',
-  'daily.colDate': 'Date', 'daily.colClean': 'Clean', 'daily.colPrep': 'Prep', 'daily.colGold': 'Gold (g)',
-  'daily.colFuelIn': 'Fuel In', 'daily.colTopUp': 'Hrs Top-up', 'daily.colNotes': 'Notes',
+  'daily.colDate': 'Date', 'daily.colClean': 'Clean hrs', 'daily.colPrep': 'Prep hrs',
+  'daily.colIdle': 'Idle hrs', 'daily.colTotal': 'Total hrs',
+  'daily.colGold': 'Gold (g)', 'daily.colFuelIn': 'Fuel In', 'daily.colNotes': 'Notes',
   // Transactions
   'tx.title': 'Statement', 'tx.newTx': '+ New Transaction', 'tx.cancel': 'Cancel',
   'tx.date': 'Date', 'tx.type': 'Type', 'tx.expenseDebit': 'Expense (Debit)', 'tx.creditIncome': 'Credit (Income / Inflow)',
@@ -78,6 +82,7 @@ const EN_STRINGS = {
   'tx.expense': 'expense', 'tx.credit': 'credit',
   'tx.gramsSold': 'Grams Sold', 'tx.goldSale': 'Gold Sale', 'tx.loan': 'Loan',
   'tx.investment': 'Investment', 'tx.otherIncome': 'Other Income',
+  'tx.barrelsReceived': 'Barrels Received', 'tx.hrsAdded': 'Machine Hours Added',
   // Weekly
   'weekly.selectWeek': 'Select Week', 'weekly.noData': 'No log data yet — add daily logs first.',
   'weekly.noSelection': 'Select a highlighted week to view snapshot.', 'weekly.through': 'through',
@@ -315,7 +320,7 @@ function Login({ onLogin }) {
 // ============================================================
 // LAYOUT / NAV
 // ============================================================
-function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogout, children }) {
+function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogout, children }) {
   const { t, locale, setLocale } = useT();
 
   const tabs = [
@@ -339,16 +344,16 @@ function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogo
             <div className="text-sm tracking-widest uppercase font-semibold">{t('brand.name')}</div>
           </div>
           <div className="flex items-center gap-3 text-xs">
+            {(profile?.role === 'super_admin' || sites.length > 1) && (
+              <button onClick={onSwitchSite}
+                className="bg-stone-800 border border-stone-600 px-3 py-1 text-stone-200 hover:bg-amber-700 hover:border-amber-700 hover:text-white transition-colors uppercase tracking-widest text-[10px]">
+                ⇆ Sites
+              </button>
+            )}
             <select value={locale} onChange={(e) => setLocale(e.target.value)}
               className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
               {SUPPORTED_LOCALES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
             </select>
-            {sites.length > 1 && (
-              <select value={site?.id || ''} onChange={(e) => onSiteChange(e.target.value)}
-                className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
-                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            )}
             <div className="hidden sm:block text-stone-400">{profile?.name}</div>
             <span className="hidden sm:block text-[10px] uppercase tracking-widest bg-amber-700 px-2 py-0.5">{profile?.role?.replace('_', ' ')}</span>
             <button onClick={onLogout} className="text-stone-400 hover:text-amber-500 uppercase tracking-wider">{t('nav.logout')}</button>
@@ -362,7 +367,7 @@ function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogo
           <div className="py-3 border-b border-stone-100">
             <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
             <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
-            <div className="text-xs text-stone-500">{site?.location}</div>
+            {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
           </div>
           <nav className="flex gap-1 overflow-x-auto">
             {tabs.map((tab) => (
@@ -501,14 +506,18 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  const fuelReceivedBarrels = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelFromDailyLogs = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelFromTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
+  const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
-  const totalHrs = cleaningHrs + prepHrs;
+  const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
+  const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
   const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
   const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
-  const machineHrsRemaining = Number(inputs.machine_hrs_opening) - totalHrs;
+  const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
+  const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
 
   const grossGold = snapLogs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
   const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
@@ -661,20 +670,24 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const latestLog = logs[0];
 
     // Cumulative fuel & machine hours
-    const fuelReceivedBarrels = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelFromDailyLogs = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelFromTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
+    const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
     const cleaningHrs = logs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
     const prepHrs = logs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
-    const totalHrs = cleaningHrs + prepHrs;
+    const idleHrs = logs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
+    const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-    // Fuel consumed (liters) using per-hour rates
+    // Fuel consumed (liters) using per-hour rates — idle machines don't run at working fuel rate
     const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
     const fuelOpeningL = Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel);
     const fuelReceivedL = fuelReceivedBarrels * Number(inputs.fuel_per_barrel);
     const fuelRemainingL = fuelOpeningL + fuelReceivedL - fuelConsumedL;
     const fuelRemainingBarrels = fuelRemainingL / Number(inputs.fuel_per_barrel);
 
-    // Machine hours
-    const machineHrsRemaining = Number(inputs.machine_hrs_opening) - totalHrs;
+    // Machine hours: opening + top-ups from Machine Rental expense transactions − all billable hours
+    const machineHrsToppedUpTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
+    const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
 
     // Gold totals
     const grossGold = logs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
@@ -824,9 +837,9 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
     date: todayISO(),
     cleaning_hrs: '',
     prep_hrs: '',
+    idle_hrs: '',
     gold_g: '',
     fuel_received_barrels: '',
-    machine_hrs_topped_up: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -841,16 +854,16 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
       date: form.date,
       cleaning_hrs: Number(form.cleaning_hrs) || 0,
       prep_hrs: Number(form.prep_hrs) || 0,
+      idle_hrs: Number(form.idle_hrs) || 0,
       gold_g: Number(form.gold_g) || 0,
       fuel_received_barrels: Number(form.fuel_received_barrels) || 0,
-      machine_hrs_topped_up: Number(form.machine_hrs_topped_up) || 0,
       notes: form.notes || null,
     };
     const { error } = await supabase.from('daily_logs').upsert(payload, { onConflict: 'site_id,date' });
     setSaving(false);
     if (error) { setError(error.message); return; }
     setShowForm(false);
-    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', gold_g: '', fuel_received_barrels: '', machine_hrs_topped_up: '', notes: '' });
+    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', idle_hrs: '', gold_g: '', fuel_received_barrels: '', notes: '' });
     onRefresh();
   };
 
@@ -876,8 +889,8 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
             <Field label={t('daily.goldProduced')} type="number" value={form.gold_g} onChange={(v) => setForm({ ...form, gold_g: v })} />
             <Field label={t('daily.cleaningHours')} type="number" value={form.cleaning_hrs} onChange={(v) => setForm({ ...form, cleaning_hrs: v })} />
             <Field label={t('daily.prepHours')} type="number" value={form.prep_hrs} onChange={(v) => setForm({ ...form, prep_hrs: v })} />
+            <Field label={t('daily.idleHours')} type="number" value={form.idle_hrs} onChange={(v) => setForm({ ...form, idle_hrs: v })} />
             <Field label={t('daily.fuelReceived')} type="number" value={form.fuel_received_barrels} onChange={(v) => setForm({ ...form, fuel_received_barrels: v })} />
-            <Field label={t('daily.machineTopUp')} type="number" value={form.machine_hrs_topped_up} onChange={(v) => setForm({ ...form, machine_hrs_topped_up: v })} />
           </div>
           <div className="mt-3">
             <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">{t('daily.notes')}</label>
@@ -907,24 +920,28 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
               <th className="px-3 py-2 text-left">{t('daily.colDate')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colClean')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colPrep')}</th>
+              <th className="px-3 py-2 text-right">{t('daily.colIdle')}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t('daily.colTotal')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colGold')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colFuelIn')}</th>
-              <th className="px-3 py-2 text-right">{t('daily.colTopUp')}</th>
               <th className="px-3 py-2 text-left">{t('daily.colNotes')}</th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 && (
-              <tr><td colSpan="7" className="px-3 py-8 text-center text-stone-400">{t('daily.noLogs')}</td></tr>
+              <tr><td colSpan="8" className="px-3 py-8 text-center text-stone-400">{t('daily.noLogs')}</td></tr>
             )}
             {logs.map((l) => (
               <tr key={l.id} className="border-t border-stone-100">
                 <td className="px-3 py-2 text-stone-900 font-medium">{l.date}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.cleaning_hrs, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.prep_hrs, 1)}</td>
+                <td className="px-3 py-2 text-right text-stone-400">{l.idle_hrs > 0 ? fmtNum(l.idle_hrs, 1) : '—'}</td>
+                <td className="px-3 py-2 text-right font-semibold">
+                  {fmtNum((Number(l.cleaning_hrs) || 0) + (Number(l.prep_hrs) || 0) + (Number(l.idle_hrs) || 0), 1)}
+                </td>
                 <td className="px-3 py-2 text-right font-medium text-amber-700">{fmtNum(l.gold_g, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.fuel_received_barrels, 1)}</td>
-                <td className="px-3 py-2 text-right">{fmtNum(l.machine_hrs_topped_up, 0)}</td>
                 <td className="px-3 py-2 text-stone-500">{l.notes || '—'}</td>
               </tr>
             ))}
@@ -956,7 +973,7 @@ function Field({ label, type = 'text', value, onChange }) {
 function Transactions({ site, transactions, profile, onRefresh }) {
   const { t } = useT();
   const [showForm, setShowForm] = useState(false);
-  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '' };
+  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '', fuel_barrels_topped_up: '', machine_hrs_topped_up: '' };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -980,6 +997,10 @@ function Transactions({ site, transactions, profile, onRefresh }) {
       notes: form.notes || null,
       gold_grams_sold: (form.type === 'credit' && form.category === 'Gold Sale' && form.gold_grams_sold)
         ? Number(form.gold_grams_sold) : null,
+      fuel_barrels_topped_up: (form.type === 'expense' && form.category === 'Fuel' && form.fuel_barrels_topped_up)
+        ? Number(form.fuel_barrels_topped_up) : null,
+      machine_hrs_topped_up: (form.type === 'expense' && form.category === 'Machine Rental' && form.machine_hrs_topped_up)
+        ? Number(form.machine_hrs_topped_up) : null,
     };
     const { error } = await supabase.from('transactions').insert(payload);
     setSaving(false);
@@ -1042,6 +1063,14 @@ function Transactions({ site, transactions, profile, onRefresh }) {
               <Field label={t('tx.gramsSold')} type="number" value={form.gold_grams_sold}
                 onChange={(v) => setForm({ ...form, gold_grams_sold: v })} />
             )}
+            {form.type === 'expense' && form.category === 'Fuel' && (
+              <Field label={t('tx.barrelsReceived')} type="number" value={form.fuel_barrels_topped_up}
+                onChange={(v) => setForm({ ...form, fuel_barrels_topped_up: v })} />
+            )}
+            {form.type === 'expense' && form.category === 'Machine Rental' && (
+              <Field label={t('tx.hrsAdded')} type="number" value={form.machine_hrs_topped_up}
+                onChange={(v) => setForm({ ...form, machine_hrs_topped_up: v })} />
+            )}
             <Field label={t('tx.paidBy')} value={form.paid_by} onChange={(v) => setForm({ ...form, paid_by: v })} />
           </div>
           <div className="mt-3">
@@ -1087,6 +1116,12 @@ function Transactions({ site, transactions, profile, onRefresh }) {
                   {tx.category}
                   {tx.category === 'Gold Sale' && tx.gold_grams_sold > 0 && (
                     <span className="ml-1 text-[10px] text-amber-700">({fmtNum(tx.gold_grams_sold, 1)}g)</span>
+                  )}
+                  {tx.category === 'Fuel' && tx.fuel_barrels_topped_up > 0 && (
+                    <span className="ml-1 text-[10px] text-blue-700">(+{fmtNum(tx.fuel_barrels_topped_up, 0)} bbl)</span>
+                  )}
+                  {tx.category === 'Machine Rental' && tx.machine_hrs_topped_up > 0 && (
+                    <span className="ml-1 text-[10px] text-violet-700">(+{fmtNum(tx.machine_hrs_topped_up, 0)} hrs)</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -1234,6 +1269,116 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 }
 
 // ============================================================
+// SITE PICKER
+// ============================================================
+function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', location: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleCreate = async () => {
+    setError('');
+    setSaving(true);
+    const { data: newSite, error: sErr } = await supabase
+      .from('sites')
+      .insert({ name: form.name.trim(), location: form.location.trim() })
+      .select()
+      .single();
+    if (sErr) { setError(sErr.message); setSaving(false); return; }
+    await supabase.from('inputs').insert({
+      site_id: newSite.id,
+      gold_price: 0, fuel_price: 0, rental_rate: 0,
+      royalty_rate: 0.07, landowner_share: 0.30,
+      target_cash_reserve: 0, efficiency_threshold: 0,
+      opening_cash: 0, machine_hrs_opening: 0,
+      fuel_barrels_opening: 0, fuel_per_barrel: 200,
+      cleaning_fuel_rate: 25, prep_fuel_rate: 20,
+    });
+    setSaving(false);
+    setShowCreate(false);
+    setForm({ name: '', location: '' });
+    await onRefreshSites();
+    onSelect(newSite);
+  };
+
+  return (
+    <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-4 py-12" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <div className="w-full max-w-xl">
+        <div className="flex items-center gap-3 mb-8">
+          <img src={logoShield} alt="" className="w-8 h-8" />
+          <div>
+            <div className="text-sm tracking-widest uppercase font-semibold text-stone-900">Armada Mining</div>
+            <div className="text-[10px] uppercase tracking-widest text-stone-500">
+              {sites.length > 0 ? 'Select a site to continue' : 'No sites assigned yet'}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {sites.map((s) => (
+            <button key={s.id} onClick={() => onSelect(s)}
+              className="w-full text-left bg-white border border-stone-200 px-5 py-4 hover:border-amber-700 hover:bg-amber-50 transition-colors group">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-stone-900 group-hover:text-amber-800">{s.name}</div>
+                  {s.location && <div className="text-[10px] uppercase tracking-widest text-stone-500 mt-0.5">{s.location}</div>}
+                </div>
+                <div className="text-stone-400 group-hover:text-amber-700 text-xs uppercase tracking-widest">Enter →</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {sites.length === 0 && profile.role !== 'super_admin' && (
+          <div className="text-center py-8 text-stone-400 text-sm">Contact your admin to be assigned to a site.</div>
+        )}
+
+        {profile.role === 'super_admin' && (
+          <div className="mt-6">
+            {!showCreate ? (
+              <button onClick={() => setShowCreate(true)}
+                className="w-full py-3 text-xs uppercase tracking-widest text-stone-500 border border-dashed border-stone-300 hover:border-amber-700 hover:text-amber-700 transition-colors">
+                + New Site
+              </button>
+            ) : (
+              <div className="bg-white border border-stone-200 p-4">
+                <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3 font-semibold">New Site</div>
+                <div className="grid gap-3">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">Site Name</label>
+                    <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="e.g. Armada North"
+                      className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">Location</label>
+                    <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
+                      placeholder="e.g. Oromia Region"
+                      className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                </div>
+                {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 mt-3">{error}</div>}
+                <div className="flex gap-2 mt-3">
+                  <button onClick={handleCreate} disabled={saving || !form.name.trim()}
+                    className="bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">
+                    {saving ? 'Creating…' : 'Create Site'}
+                  </button>
+                  <button onClick={() => { setShowCreate(false); setError(''); setForm({ name: '', location: '' }); }}
+                    className="px-6 py-2 text-xs uppercase tracking-widest text-stone-600 hover:text-stone-900 border border-stone-300">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // APP ROOT
 // ============================================================
 export default function App() {
@@ -1260,7 +1405,8 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Load profile and sites when session exists
+  // Load profile and sites when session exists — parallel fetch so all
+  // state lands in one render batch (no empty-picker flash).
   useEffect(() => {
     if (!session) {
       setProfile(null); setSites([]); setSite(null);
@@ -1268,22 +1414,36 @@ export default function App() {
     }
     (async () => {
       setBootError('');
-      const { data: prof, error: pErr } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle();
-      if (pErr) { setBootError(pErr.message); return; }
-      if (!prof) { setBootError('No profile found for this account. Contact super admin.'); return; }
-      setProfile(prof);
+      const [profResult, sitesResult] = await Promise.all([
+        supabase.from('users').select('*').eq('id', session.user.id).maybeSingle(),
+        supabase.from('sites').select('*').order('name'),
+      ]);
+      if (profResult.error) { setBootError(profResult.error.message); return; }
+      if (!profResult.data) { setBootError('No profile found for this account. Contact super admin.'); return; }
+      if (sitesResult.error) { setBootError(sitesResult.error.message); return; }
 
-      // Load sites (RLS will filter)
-      const { data: ss, error: sErr } = await supabase.from('sites').select('*').order('name');
-      if (sErr) { setBootError(sErr.message); return; }
-      setSites(ss || []);
-      if (ss && ss.length > 0) setSite(ss[0]);
+      const prof = profResult.data;
+      const ss = sitesResult.data || [];
+
+      // All three updates in one synchronous block → React batches into one render
+      setProfile(prof);
+      setSites(ss);
+      if (ss.length === 1) {
+        setSite(ss[0]);
+      } else if (ss.length > 1) {
+        try {
+          const savedId = localStorage.getItem('armada_site_id');
+          const remembered = savedId ? ss.find((s) => s.id === savedId) : null;
+          if (remembered) setSite(remembered);
+        } catch (_) {}
+      }
     })();
   }, [session]);
+
+  const refreshSites = async () => {
+    const { data: ss } = await supabase.from('sites').select('*').order('name');
+    setSites(ss || []);
+  };
 
   // Load site data
   const refreshSiteData = async () => {
@@ -1333,11 +1493,24 @@ export default function App() {
     );
   }
 
-  if (!profile || !site) {
+  if (!profile) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center text-stone-500 text-sm" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
         Loading profile…
       </div>
+    );
+  }
+
+  if (!site) {
+    return (
+      <LocaleProvider>
+        <SitePicker
+          sites={sites}
+          profile={profile}
+          onSelect={(s) => { setSite(s); try { localStorage.setItem('armada_site_id', s.id); } catch (_) {} }}
+          onRefreshSites={refreshSites}
+        />
+      </LocaleProvider>
     );
   }
 
@@ -1348,7 +1521,7 @@ export default function App() {
         profile={profile}
         site={site}
         sites={sites}
-        onSiteChange={(id) => setSite(sites.find((s) => s.id === id))}
+        onSwitchSite={() => { setSite(null); try { localStorage.removeItem('armada_site_id'); } catch (_) {} }}
         page={page}
         setPage={setPage}
         onLogout={handleLogout}
