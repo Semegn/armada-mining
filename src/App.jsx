@@ -341,6 +341,12 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
             <div className="text-sm tracking-widest uppercase font-semibold">{t('brand.name')}</div>
           </div>
           <div className="flex items-center gap-3 text-xs">
+            {(profile?.role === 'super_admin' || sites.length > 1) && (
+              <button onClick={onSwitchSite}
+                className="bg-stone-800 border border-stone-600 px-3 py-1 text-stone-200 hover:bg-amber-700 hover:border-amber-700 hover:text-white transition-colors uppercase tracking-widest text-[10px]">
+                ⇆ Sites
+              </button>
+            )}
             <select value={locale} onChange={(e) => setLocale(e.target.value)}
               className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
               {SUPPORTED_LOCALES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
@@ -355,18 +361,10 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
       {/* Site name + tabs */}
       <div className="bg-white border-b border-stone-200 flex-shrink-0">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="py-3 border-b border-stone-100 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
-              <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
-              {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
-            </div>
-            {(profile?.role === 'super_admin' || sites.length > 1) && (
-              <button onClick={onSwitchSite}
-                className="text-[10px] uppercase tracking-widest text-stone-400 hover:text-amber-700 transition-colors border border-stone-200 hover:border-amber-700 px-3 py-1.5">
-                ← Sites
-              </button>
-            )}
+          <div className="py-3 border-b border-stone-100">
+            <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
+            <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
+            {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
           </div>
           <nav className="flex gap-1 overflow-x-auto">
             {tabs.map((tab) => (
