@@ -63,11 +63,12 @@ const EN_STRINGS = {
   // Daily Logs
   'daily.title': 'Daily Logs', 'daily.entries': 'entries', 'daily.newLog': '+ New Log', 'daily.cancel': 'Cancel',
   'daily.date': 'Date', 'daily.goldProduced': 'Gold Produced (g)', 'daily.cleaningHours': 'Cleaning Hours',
-  'daily.prepHours': 'Prep Hours', 'daily.fuelReceived': 'Fuel Received (barrels)',
+  'daily.prepHours': 'Prep Hours', 'daily.idleHours': 'Idle Hours (charged, not working)',
+  'daily.fuelReceived': 'Fuel Received (barrels)',
   'daily.machineTopUp': 'Machine Hrs Topped Up', 'daily.notes': 'Notes',
   'daily.saveLog': 'Save Log', 'daily.saving': 'Saving…', 'daily.noLogs': 'No logs yet',
-  'daily.colDate': 'Date', 'daily.colClean': 'Clean', 'daily.colPrep': 'Prep', 'daily.colGold': 'Gold (g)',
-  'daily.colFuelIn': 'Fuel In', 'daily.colTopUp': 'Hrs Top-up', 'daily.colNotes': 'Notes',
+  'daily.colDate': 'Date', 'daily.colClean': 'Clean', 'daily.colPrep': 'Prep', 'daily.colIdle': 'Idle',
+  'daily.colGold': 'Gold (g)', 'daily.colFuelIn': 'Fuel In', 'daily.colTopUp': 'Hrs Top-up', 'daily.colNotes': 'Notes',
   // Transactions
   'tx.title': 'Statement', 'tx.newTx': '+ New Transaction', 'tx.cancel': 'Cancel',
   'tx.date': 'Date', 'tx.type': 'Type', 'tx.expenseDebit': 'Expense (Debit)', 'tx.creditIncome': 'Credit (Income / Inflow)',
@@ -509,13 +510,15 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
-  const totalHrs = cleaningHrs + prepHrs;
+  const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
+  const totalHrs = cleaningHrs + prepHrs; // productive hours only — used for efficiency (g/hr)
 
   const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
   const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
   const machineHrsToppedUpLogs = snapLogs.reduce((s, l) => s + (Number(l.machine_hrs_topped_up) || 0), 0);
   const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
-  const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpLogs + machineHrsToppedUpTxs - totalHrs;
+  // billable = productive + idle; both deplete the contracted machine hours
+  const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpLogs + machineHrsToppedUpTxs - totalHrs - idleHrs;
 
   const grossGold = snapLogs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
   const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
@@ -673,7 +676,8 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
     const cleaningHrs = logs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
     const prepHrs = logs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
-    const totalHrs = cleaningHrs + prepHrs;
+    const idleHrs = logs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
+    const totalHrs = cleaningHrs + prepHrs; // productive hours only — used for efficiency (g/hr)
 
     // Fuel consumed (liters) using per-hour rates
     const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
@@ -682,10 +686,10 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const fuelRemainingL = fuelOpeningL + fuelReceivedL - fuelConsumedL;
     const fuelRemainingBarrels = fuelRemainingL / Number(inputs.fuel_per_barrel);
 
-    // Machine hours — opening + all top-ups (daily logs + Machine Rental expense transactions) − used
+    // Machine hours — opening + all top-ups (daily logs + Machine Rental expense transactions) − billable (productive + idle)
     const machineHrsToppedUpLogs = logs.reduce((s, l) => s + (Number(l.machine_hrs_topped_up) || 0), 0);
     const machineHrsToppedUpTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
-    const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpLogs + machineHrsToppedUpTxs - totalHrs;
+    const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpLogs + machineHrsToppedUpTxs - totalHrs - idleHrs;
 
     // Gold totals
     const grossGold = logs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
@@ -835,6 +839,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
     date: todayISO(),
     cleaning_hrs: '',
     prep_hrs: '',
+    idle_hrs: '',
     gold_g: '',
     fuel_received_barrels: '',
     machine_hrs_topped_up: '',
@@ -852,6 +857,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
       date: form.date,
       cleaning_hrs: Number(form.cleaning_hrs) || 0,
       prep_hrs: Number(form.prep_hrs) || 0,
+      idle_hrs: Number(form.idle_hrs) || 0,
       gold_g: Number(form.gold_g) || 0,
       fuel_received_barrels: Number(form.fuel_received_barrels) || 0,
       machine_hrs_topped_up: Number(form.machine_hrs_topped_up) || 0,
@@ -861,7 +867,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
     setSaving(false);
     if (error) { setError(error.message); return; }
     setShowForm(false);
-    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', gold_g: '', fuel_received_barrels: '', machine_hrs_topped_up: '', notes: '' });
+    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', idle_hrs: '', gold_g: '', fuel_received_barrels: '', machine_hrs_topped_up: '', notes: '' });
     onRefresh();
   };
 
@@ -887,6 +893,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
             <Field label={t('daily.goldProduced')} type="number" value={form.gold_g} onChange={(v) => setForm({ ...form, gold_g: v })} />
             <Field label={t('daily.cleaningHours')} type="number" value={form.cleaning_hrs} onChange={(v) => setForm({ ...form, cleaning_hrs: v })} />
             <Field label={t('daily.prepHours')} type="number" value={form.prep_hrs} onChange={(v) => setForm({ ...form, prep_hrs: v })} />
+            <Field label={t('daily.idleHours')} type="number" value={form.idle_hrs} onChange={(v) => setForm({ ...form, idle_hrs: v })} />
             <Field label={t('daily.fuelReceived')} type="number" value={form.fuel_received_barrels} onChange={(v) => setForm({ ...form, fuel_received_barrels: v })} />
             <Field label={t('daily.machineTopUp')} type="number" value={form.machine_hrs_topped_up} onChange={(v) => setForm({ ...form, machine_hrs_topped_up: v })} />
           </div>
@@ -918,6 +925,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
               <th className="px-3 py-2 text-left">{t('daily.colDate')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colClean')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colPrep')}</th>
+              <th className="px-3 py-2 text-right">{t('daily.colIdle')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colGold')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colFuelIn')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colTopUp')}</th>
@@ -926,13 +934,14 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
           </thead>
           <tbody>
             {logs.length === 0 && (
-              <tr><td colSpan="7" className="px-3 py-8 text-center text-stone-400">{t('daily.noLogs')}</td></tr>
+              <tr><td colSpan="8" className="px-3 py-8 text-center text-stone-400">{t('daily.noLogs')}</td></tr>
             )}
             {logs.map((l) => (
               <tr key={l.id} className="border-t border-stone-100">
                 <td className="px-3 py-2 text-stone-900 font-medium">{l.date}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.cleaning_hrs, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.prep_hrs, 1)}</td>
+                <td className="px-3 py-2 text-right text-stone-400">{l.idle_hrs > 0 ? fmtNum(l.idle_hrs, 1) : '—'}</td>
                 <td className="px-3 py-2 text-right font-medium text-amber-700">{fmtNum(l.gold_g, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.fuel_received_barrels, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.machine_hrs_topped_up, 0)}</td>
