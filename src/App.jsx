@@ -316,7 +316,7 @@ function Login({ onLogin }) {
 // ============================================================
 // LAYOUT / NAV
 // ============================================================
-function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogout, children }) {
+function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogout, children }) {
   const { t, locale, setLocale } = useT();
 
   const tabs = [
@@ -344,12 +344,6 @@ function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogo
               className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
               {SUPPORTED_LOCALES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
             </select>
-            {sites.length > 1 && (
-              <select value={site?.id || ''} onChange={(e) => onSiteChange(e.target.value)}
-                className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
-                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            )}
             <div className="hidden sm:block text-stone-400">{profile?.name}</div>
             <span className="hidden sm:block text-[10px] uppercase tracking-widest bg-amber-700 px-2 py-0.5">{profile?.role?.replace('_', ' ')}</span>
             <button onClick={onLogout} className="text-stone-400 hover:text-amber-500 uppercase tracking-wider">{t('nav.logout')}</button>
@@ -360,10 +354,18 @@ function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogo
       {/* Site name + tabs */}
       <div className="bg-white border-b border-stone-200 flex-shrink-0">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="py-3 border-b border-stone-100">
-            <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
-            <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
-            <div className="text-xs text-stone-500">{site?.location}</div>
+          <div className="py-3 border-b border-stone-100 flex items-center justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
+              <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
+              {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
+            </div>
+            {sites.length > 1 && (
+              <button onClick={onSwitchSite}
+                className="text-[10px] uppercase tracking-widest text-stone-400 hover:text-amber-700 transition-colors border border-stone-200 hover:border-amber-700 px-3 py-1.5">
+                ← Sites
+              </button>
+            )}
           </div>
           <nav className="flex gap-1 overflow-x-auto">
             {tabs.map((tab) => (
@@ -1261,6 +1263,116 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 }
 
 // ============================================================
+// SITE PICKER
+// ============================================================
+function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', location: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleCreate = async () => {
+    setError('');
+    setSaving(true);
+    const { data: newSite, error: sErr } = await supabase
+      .from('sites')
+      .insert({ name: form.name.trim(), location: form.location.trim() })
+      .select()
+      .single();
+    if (sErr) { setError(sErr.message); setSaving(false); return; }
+    await supabase.from('inputs').insert({
+      site_id: newSite.id,
+      gold_price: 0, fuel_price: 0, rental_rate: 0,
+      royalty_rate: 0.07, landowner_share: 0.30,
+      target_cash_reserve: 0, efficiency_threshold: 0,
+      opening_cash: 0, machine_hrs_opening: 0,
+      fuel_barrels_opening: 0, fuel_per_barrel: 200,
+      cleaning_fuel_rate: 25, prep_fuel_rate: 20,
+    });
+    setSaving(false);
+    setShowCreate(false);
+    setForm({ name: '', location: '' });
+    await onRefreshSites();
+    onSelect(newSite);
+  };
+
+  return (
+    <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-4 py-12" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <div className="w-full max-w-xl">
+        <div className="flex items-center gap-3 mb-8">
+          <img src={logoShield} alt="" className="w-8 h-8" />
+          <div>
+            <div className="text-sm tracking-widest uppercase font-semibold text-stone-900">Armada Mining</div>
+            <div className="text-[10px] uppercase tracking-widest text-stone-500">
+              {sites.length > 0 ? 'Select a site to continue' : 'No sites assigned yet'}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {sites.map((s) => (
+            <button key={s.id} onClick={() => onSelect(s)}
+              className="w-full text-left bg-white border border-stone-200 px-5 py-4 hover:border-amber-700 hover:bg-amber-50 transition-colors group">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-stone-900 group-hover:text-amber-800">{s.name}</div>
+                  {s.location && <div className="text-[10px] uppercase tracking-widest text-stone-500 mt-0.5">{s.location}</div>}
+                </div>
+                <div className="text-stone-400 group-hover:text-amber-700 text-xs uppercase tracking-widest">Enter →</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {sites.length === 0 && profile.role !== 'super_admin' && (
+          <div className="text-center py-8 text-stone-400 text-sm">Contact your admin to be assigned to a site.</div>
+        )}
+
+        {profile.role === 'super_admin' && (
+          <div className="mt-6">
+            {!showCreate ? (
+              <button onClick={() => setShowCreate(true)}
+                className="w-full py-3 text-xs uppercase tracking-widest text-stone-500 border border-dashed border-stone-300 hover:border-amber-700 hover:text-amber-700 transition-colors">
+                + New Site
+              </button>
+            ) : (
+              <div className="bg-white border border-stone-200 p-4">
+                <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3 font-semibold">New Site</div>
+                <div className="grid gap-3">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">Site Name</label>
+                    <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="e.g. Armada North"
+                      className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">Location</label>
+                    <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
+                      placeholder="e.g. Oromia Region"
+                      className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                </div>
+                {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 mt-3">{error}</div>}
+                <div className="flex gap-2 mt-3">
+                  <button onClick={handleCreate} disabled={saving || !form.name.trim()}
+                    className="bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">
+                    {saving ? 'Creating…' : 'Create Site'}
+                  </button>
+                  <button onClick={() => { setShowCreate(false); setError(''); setForm({ name: '', location: '' }); }}
+                    className="px-6 py-2 text-xs uppercase tracking-widest text-stone-600 hover:text-stone-900 border border-stone-300">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // APP ROOT
 // ============================================================
 export default function App() {
@@ -1308,9 +1420,14 @@ export default function App() {
       const { data: ss, error: sErr } = await supabase.from('sites').select('*').order('name');
       if (sErr) { setBootError(sErr.message); return; }
       setSites(ss || []);
-      if (ss && ss.length > 0) setSite(ss[0]);
+      if (ss && ss.length === 1) setSite(ss[0]);
     })();
   }, [session]);
+
+  const refreshSites = async () => {
+    const { data: ss } = await supabase.from('sites').select('*').order('name');
+    setSites(ss || []);
+  };
 
   // Load site data
   const refreshSiteData = async () => {
@@ -1360,11 +1477,24 @@ export default function App() {
     );
   }
 
-  if (!profile || !site) {
+  if (!profile) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center text-stone-500 text-sm" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
         Loading profile…
       </div>
+    );
+  }
+
+  if (!site) {
+    return (
+      <LocaleProvider>
+        <SitePicker
+          sites={sites}
+          profile={profile}
+          onSelect={(s) => setSite(s)}
+          onRefreshSites={refreshSites}
+        />
+      </LocaleProvider>
     );
   }
 
@@ -1375,7 +1505,7 @@ export default function App() {
         profile={profile}
         site={site}
         sites={sites}
-        onSiteChange={(id) => setSite(sites.find((s) => s.id === id))}
+        onSwitchSite={() => setSite(null)}
         page={page}
         setPage={setPage}
         onLogout={handleLogout}
