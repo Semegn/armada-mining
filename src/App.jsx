@@ -78,6 +78,7 @@ const EN_STRINGS = {
   'tx.expense': 'expense', 'tx.credit': 'credit',
   'tx.gramsSold': 'Grams Sold', 'tx.goldSale': 'Gold Sale', 'tx.loan': 'Loan',
   'tx.investment': 'Investment', 'tx.otherIncome': 'Other Income',
+  'tx.barrelsReceived': 'Barrels Received', 'tx.hrsAdded': 'Machine Hours Added',
   // Weekly
   'weekly.selectWeek': 'Select Week', 'weekly.noData': 'No log data yet — add daily logs first.',
   'weekly.noSelection': 'Select a highlighted week to view snapshot.', 'weekly.through': 'through',
@@ -501,14 +502,18 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  const fuelReceivedBarrels = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelFromDailyLogs = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelFromTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
+  const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
   const totalHrs = cleaningHrs + prepHrs;
 
   const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
   const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
-  const machineHrsRemaining = Number(inputs.machine_hrs_opening) - totalHrs;
+  const machineHrsToppedUpLogs = snapLogs.reduce((s, l) => s + (Number(l.machine_hrs_topped_up) || 0), 0);
+  const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
+  const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpLogs + machineHrsToppedUpTxs - totalHrs;
 
   const grossGold = snapLogs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
   const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
@@ -661,7 +666,9 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const latestLog = logs[0];
 
     // Cumulative fuel & machine hours
-    const fuelReceivedBarrels = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelFromDailyLogs = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelFromTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
+    const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
     const cleaningHrs = logs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
     const prepHrs = logs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
     const totalHrs = cleaningHrs + prepHrs;
@@ -673,8 +680,10 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const fuelRemainingL = fuelOpeningL + fuelReceivedL - fuelConsumedL;
     const fuelRemainingBarrels = fuelRemainingL / Number(inputs.fuel_per_barrel);
 
-    // Machine hours
-    const machineHrsRemaining = Number(inputs.machine_hrs_opening) - totalHrs;
+    // Machine hours — opening + all top-ups (daily logs + Machine Rental expense transactions) − used
+    const machineHrsToppedUpLogs = logs.reduce((s, l) => s + (Number(l.machine_hrs_topped_up) || 0), 0);
+    const machineHrsToppedUpTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
+    const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpLogs + machineHrsToppedUpTxs - totalHrs;
 
     // Gold totals
     const grossGold = logs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
@@ -956,7 +965,7 @@ function Field({ label, type = 'text', value, onChange }) {
 function Transactions({ site, transactions, profile, onRefresh }) {
   const { t } = useT();
   const [showForm, setShowForm] = useState(false);
-  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '' };
+  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '', fuel_barrels_topped_up: '', machine_hrs_topped_up: '' };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -980,6 +989,10 @@ function Transactions({ site, transactions, profile, onRefresh }) {
       notes: form.notes || null,
       gold_grams_sold: (form.type === 'credit' && form.category === 'Gold Sale' && form.gold_grams_sold)
         ? Number(form.gold_grams_sold) : null,
+      fuel_barrels_topped_up: (form.type === 'expense' && form.category === 'Fuel' && form.fuel_barrels_topped_up)
+        ? Number(form.fuel_barrels_topped_up) : null,
+      machine_hrs_topped_up: (form.type === 'expense' && form.category === 'Machine Rental' && form.machine_hrs_topped_up)
+        ? Number(form.machine_hrs_topped_up) : null,
     };
     const { error } = await supabase.from('transactions').insert(payload);
     setSaving(false);
@@ -1042,6 +1055,14 @@ function Transactions({ site, transactions, profile, onRefresh }) {
               <Field label={t('tx.gramsSold')} type="number" value={form.gold_grams_sold}
                 onChange={(v) => setForm({ ...form, gold_grams_sold: v })} />
             )}
+            {form.type === 'expense' && form.category === 'Fuel' && (
+              <Field label={t('tx.barrelsReceived')} type="number" value={form.fuel_barrels_topped_up}
+                onChange={(v) => setForm({ ...form, fuel_barrels_topped_up: v })} />
+            )}
+            {form.type === 'expense' && form.category === 'Machine Rental' && (
+              <Field label={t('tx.hrsAdded')} type="number" value={form.machine_hrs_topped_up}
+                onChange={(v) => setForm({ ...form, machine_hrs_topped_up: v })} />
+            )}
             <Field label={t('tx.paidBy')} value={form.paid_by} onChange={(v) => setForm({ ...form, paid_by: v })} />
           </div>
           <div className="mt-3">
@@ -1087,6 +1108,12 @@ function Transactions({ site, transactions, profile, onRefresh }) {
                   {tx.category}
                   {tx.category === 'Gold Sale' && tx.gold_grams_sold > 0 && (
                     <span className="ml-1 text-[10px] text-amber-700">({fmtNum(tx.gold_grams_sold, 1)}g)</span>
+                  )}
+                  {tx.category === 'Fuel' && tx.fuel_barrels_topped_up > 0 && (
+                    <span className="ml-1 text-[10px] text-blue-700">(+{fmtNum(tx.fuel_barrels_topped_up, 0)} bbl)</span>
+                  )}
+                  {tx.category === 'Machine Rental' && tx.machine_hrs_topped_up > 0 && (
+                    <span className="ml-1 text-[10px] text-violet-700">(+{fmtNum(tx.machine_hrs_topped_up, 0)} hrs)</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
