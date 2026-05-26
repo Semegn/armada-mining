@@ -29,6 +29,8 @@ const CATEGORIES = [
   'Vehicle / Site Support', 'Transport', 'Maintenance', 'Other', 'Profit Share'
 ];
 
+const CREDIT_CATEGORIES = ['Gold Sale', 'Loan', 'Investment', 'Other Income'];
+
 // ============================================================
 // LOCALIZATION
 // ============================================================
@@ -54,16 +56,19 @@ const EN_STRINGS = {
   'tile.goldProduced': 'Gold Produced', 'tile.netSaleable': 'Net Saleable', 'tile.totalHours': 'Total Hours',
   'tile.efficiency': 'Efficiency', 'tile.netRevenue': 'Net Revenue', 'tile.operatingCosts': 'Operating Costs',
   'tile.profitShare': 'Profit Share', 'tile.netProfit': 'Net Profit',
+  'tile.goldOnHand': 'Gold on Hand', 'tile.goldSold': 'sold', 'tile.revenue': 'Revenue',
   'tile.afterRoyalty': 'after royalty', 'tile.afterLandownerShare': 'after landowner share',
+  'tile.fromSales': 'from gold sales', 'tile.unsold': 'unsold',
   'tile.barrels': 'barrels', 'tile.hours': 'hours', 'tile.grams': 'grams', 'tile.days': 'days', 'tile.asOf': 'as of',
   // Daily Logs
   'daily.title': 'Daily Logs', 'daily.entries': 'entries', 'daily.newLog': '+ New Log', 'daily.cancel': 'Cancel',
   'daily.date': 'Date', 'daily.goldProduced': 'Gold Produced (g)', 'daily.cleaningHours': 'Cleaning Hours',
-  'daily.prepHours': 'Prep Hours', 'daily.fuelReceived': 'Fuel Received (barrels)',
-  'daily.machineTopUp': 'Machine Hrs Topped Up', 'daily.notes': 'Notes',
+  'daily.prepHours': 'Prep Hours', 'daily.idleHours': 'Idle Hours (charged)',
+  'daily.fuelReceived': 'Fuel Received (barrels)', 'daily.notes': 'Notes',
   'daily.saveLog': 'Save Log', 'daily.saving': 'Saving…', 'daily.noLogs': 'No logs yet',
-  'daily.colDate': 'Date', 'daily.colClean': 'Clean', 'daily.colPrep': 'Prep', 'daily.colGold': 'Gold (g)',
-  'daily.colFuelIn': 'Fuel In', 'daily.colTopUp': 'Hrs Top-up', 'daily.colNotes': 'Notes',
+  'daily.colDate': 'Date', 'daily.colClean': 'Clean hrs', 'daily.colPrep': 'Prep hrs',
+  'daily.colIdle': 'Idle hrs', 'daily.colTotal': 'Total hrs',
+  'daily.colGold': 'Gold (g)', 'daily.colFuelIn': 'Fuel In', 'daily.colNotes': 'Notes',
   // Transactions
   'tx.title': 'Statement', 'tx.newTx': '+ New Transaction', 'tx.cancel': 'Cancel',
   'tx.date': 'Date', 'tx.type': 'Type', 'tx.expenseDebit': 'Expense (Debit)', 'tx.creditIncome': 'Credit (Income / Inflow)',
@@ -72,6 +77,9 @@ const EN_STRINGS = {
   'tx.colDate': 'Date', 'tx.colCategory': 'Category', 'tx.colType': 'Type',
   'tx.colAmount': 'Amount', 'tx.colPaidBy': 'Paid By', 'tx.colNotes': 'Notes',
   'tx.expense': 'expense', 'tx.credit': 'credit',
+  'tx.gramsSold': 'Grams Sold', 'tx.goldSale': 'Gold Sale', 'tx.loan': 'Loan',
+  'tx.investment': 'Investment', 'tx.otherIncome': 'Other Income',
+  'tx.barrelsReceived': 'Barrels Received', 'tx.hrsAdded': 'Machine Hours Added',
   // Weekly
   'weekly.selectWeek': 'Select Week', 'weekly.noData': 'No log data yet — add daily logs first.',
   'weekly.noSelection': 'Select a highlighted week to view snapshot.', 'weekly.through': 'through',
@@ -309,7 +317,7 @@ function Login({ onLogin }) {
 // ============================================================
 // LAYOUT / NAV
 // ============================================================
-function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogout, children }) {
+function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogout, children }) {
   const { t, locale, setLocale } = useT();
 
   const tabs = [
@@ -337,12 +345,6 @@ function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogo
               className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
               {SUPPORTED_LOCALES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
             </select>
-            {sites.length > 1 && (
-              <select value={site?.id || ''} onChange={(e) => onSiteChange(e.target.value)}
-                className="bg-stone-800 border border-stone-700 px-2 py-1 text-stone-100 text-xs">
-                {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            )}
             <div className="hidden sm:block text-stone-400">{profile?.name}</div>
             <span className="hidden sm:block text-[10px] uppercase tracking-widest bg-amber-700 px-2 py-0.5">{profile?.role?.replace('_', ' ')}</span>
             <button onClick={onLogout} className="text-stone-400 hover:text-amber-500 uppercase tracking-wider">{t('nav.logout')}</button>
@@ -353,10 +355,18 @@ function Shell({ user, profile, site, sites, onSiteChange, page, setPage, onLogo
       {/* Site name + tabs */}
       <div className="bg-white border-b border-stone-200 flex-shrink-0">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="py-3 border-b border-stone-100">
-            <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
-            <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
-            <div className="text-xs text-stone-500">{site?.location}</div>
+          <div className="py-3 border-b border-stone-100 flex items-center justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('nav.currentSite')}</div>
+              <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
+              {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
+            </div>
+            {sites.length > 1 && (
+              <button onClick={onSwitchSite}
+                className="text-[10px] uppercase tracking-widest text-stone-400 hover:text-amber-700 transition-colors border border-stone-200 hover:border-amber-700 px-3 py-1.5">
+                ← Sites
+              </button>
+            )}
           </div>
           <nav className="flex gap-1 overflow-x-auto">
             {tabs.map((tab) => (
@@ -495,25 +505,33 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  const fuelReceivedBarrels = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelFromDailyLogs = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelFromTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
+  const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
-  const totalHrs = cleaningHrs + prepHrs;
+  const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
+  const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
   const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
   const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
-  const machineHrsRemaining = Number(inputs.machine_hrs_opening) - totalHrs;
+  const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
+  const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
 
   const grossGold = snapLogs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
   const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
-  const grossRevenue = netSaleableGold * Number(inputs.gold_price);
-  const netRevenue = grossRevenue * (1 - Number(inputs.royalty_rate));
 
   const totalCosts = snapTxs.filter((t) => t.type === 'expense' && t.category !== 'Profit Share').reduce((s, t) => s + Number(t.amount), 0);
   const profitSharePaid = snapTxs.filter((t) => t.type === 'expense' && t.category === 'Profit Share').reduce((s, t) => s + Number(t.amount), 0);
   const totalCredits = snapTxs.filter((t) => t.type === 'credit').reduce((s, t) => s + Number(t.amount), 0);
 
-  const profit = netRevenue - totalCosts - profitSharePaid;
+  // Actual gold sales (cash received + grams sold)
+  const goldSalesTxs = snapTxs.filter((t) => t.type === 'credit' && t.category === 'Gold Sale');
+  const goldSold = goldSalesTxs.reduce((s, t) => s + (Number(t.gold_grams_sold) || 0), 0);
+  const goldSaleRevenue = goldSalesTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const goldOnHand = Math.max(0, netSaleableGold - goldSold);
+
+  const profit = goldSaleRevenue - totalCosts - profitSharePaid;
   const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
   const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
 
@@ -530,9 +548,9 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   return {
     weekEnd, status, reasons,
     fuelRemainingBarrels, machineHrsRemaining,
-    grossGold, netSaleableGold, cleaningHrs, prepHrs, totalHrs,
+    grossGold, netSaleableGold, goldSold, goldOnHand, cleaningHrs, prepHrs, totalHrs,
     avgGperHr: totalHrs > 0 ? grossGold / totalHrs : 0,
-    netRevenue, totalCosts, profitSharePaid, profit, costPerGram, cashOnHand,
+    goldSaleRevenue, totalCosts, profitSharePaid, profit, costPerGram, cashOnHand,
     logCount: snapLogs.length, txCount: snapTxs.length,
   };
 }
@@ -599,8 +617,10 @@ function WeeklyReport({ inputs, logs, transactions }) {
 
             {/* Working Capital */}
             <Section title={t('section.workingCapital')}>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-stone-200">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-stone-200">
                 <Tile label={t('tile.cashOnHand')} value={fmtETB(snap.cashOnHand)} unit="ETB" />
+                <Tile label={t('tile.goldOnHand')} value={fmtNum(snap.goldOnHand, 1)} unit={t('tile.grams')}
+                  sub={`${fmtNum(snap.goldSold, 1)}g sold`} />
                 <Tile label={t('tile.fuelRemaining')} value={fmtNum(snap.fuelRemainingBarrels, 1)} unit={t('tile.barrels')}
                   sub={`${t('tile.asOf')} ${snap.weekEnd}`} alert={snap.fuelRemainingBarrels < 7} />
                 <Tile label={t('tile.machineHours')} value={fmtNum(snap.machineHrsRemaining, 0)} unit={t('tile.hours')}
@@ -623,7 +643,7 @@ function WeeklyReport({ inputs, logs, transactions }) {
             {/* Financials */}
             <Section title={t('section.financialsWeek')}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-                <Tile label={t('tile.netRevenue')} value={fmtETB(snap.netRevenue)} unit="ETB" sub={t('tile.afterRoyalty')} />
+                <Tile label={t('tile.revenue')} value={fmtETB(snap.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
                 <Tile label={t('tile.operatingCosts')} value={fmtETB(snap.totalCosts)} unit="ETB"
                   sub={`${fmtETB(snap.costPerGram)} ETB/g`} alert={snap.costPerGram > Number(inputs.gold_price)} />
                 <Tile label={t('tile.profitShare')} value={fmtETB(snap.profitSharePaid)} unit="ETB" />
@@ -649,30 +669,30 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const latestLog = logs[0];
 
     // Cumulative fuel & machine hours
-    const fuelReceivedBarrels = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelFromDailyLogs = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelFromTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
+    const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
     const cleaningHrs = logs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
     const prepHrs = logs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
-    const totalHrs = cleaningHrs + prepHrs;
+    const idleHrs = logs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
+    const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-    // Fuel consumed (liters) using per-hour rates
+    // Fuel consumed (liters) using per-hour rates — idle machines don't run at working fuel rate
     const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
     const fuelOpeningL = Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel);
     const fuelReceivedL = fuelReceivedBarrels * Number(inputs.fuel_per_barrel);
     const fuelRemainingL = fuelOpeningL + fuelReceivedL - fuelConsumedL;
     const fuelRemainingBarrels = fuelRemainingL / Number(inputs.fuel_per_barrel);
 
-    // Machine hours
-    const machineHrsRemaining = Number(inputs.machine_hrs_opening) - totalHrs;
+    // Machine hours: opening + top-ups from Machine Rental expense transactions − all billable hours
+    const machineHrsToppedUpTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
+    const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
 
     // Gold totals
     const grossGold = logs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
     const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
 
-    // Revenue & costs
-    const grossRevenue = netSaleableGold * Number(inputs.gold_price);
-    const royalty = grossRevenue * Number(inputs.royalty_rate);
-    const netRevenue = grossRevenue - royalty;
-
+    // Costs
     const totalCosts = transactions
       .filter((t) => t.type === 'expense' && t.category !== 'Profit Share')
       .reduce((s, t) => s + Number(t.amount), 0);
@@ -683,8 +703,13 @@ function Dashboard({ site, inputs, logs, transactions }) {
       .filter((t) => t.type === 'credit')
       .reduce((s, t) => s + Number(t.amount), 0);
 
-    const operatingProfit = netRevenue - totalCosts;
-    const profit = operatingProfit - profitSharePaid;
+    // Actual gold sales (cash received + grams sold)
+    const goldSalesTxs = transactions.filter((t) => t.type === 'credit' && t.category === 'Gold Sale');
+    const goldSold = goldSalesTxs.reduce((s, t) => s + (Number(t.gold_grams_sold) || 0), 0);
+    const goldSaleRevenue = goldSalesTxs.reduce((s, t) => s + Number(t.amount), 0);
+    const goldOnHand = Math.max(0, netSaleableGold - goldSold);
+
+    const profit = goldSaleRevenue - totalCosts - profitSharePaid;
     const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
     const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
 
@@ -712,8 +737,8 @@ function Dashboard({ site, inputs, logs, transactions }) {
 
     return {
       latestLogDate: latestLog?.date,
-      grossGold, netSaleableGold,
-      grossRevenue, netRevenue, totalCosts, operatingProfit, profitSharePaid, profit, costPerGram,
+      grossGold, netSaleableGold, goldSold, goldOnHand,
+      goldSaleRevenue, totalCosts, profitSharePaid, profit, costPerGram,
       cashOnHand, fuelRemainingBarrels, machineHrsRemaining,
       fuelRunwayDays, machineRunwayDays, wcRunway,
       totalHrs, cleaningHrs, prepHrs,
@@ -745,8 +770,10 @@ function Dashboard({ site, inputs, logs, transactions }) {
       </div>
 
       <Section title={t('section.workingCapital')}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-stone-200">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-stone-200">
           <Tile label={t('tile.cashOnHand')} value={fmtETB(calc.cashOnHand)} unit="ETB" />
+          <Tile label={t('tile.goldOnHand')} value={fmtNum(calc.goldOnHand, 1)} unit={t('tile.grams')}
+            sub={`${fmtNum(calc.goldSold, 1)}g ${t('tile.goldSold') || 'sold'}`} />
           <Tile label={t('tile.fuelRemaining')} value={fmtNum(calc.fuelRemainingBarrels, 1)} unit={t('tile.barrels')}
             sub={calc.fuelRunwayDays !== null ? `${fmtNum(calc.fuelRunwayDays, 1)} ${t('tile.days')}` : '—'}
             alert={calc.fuelRemainingBarrels < 7} />
@@ -767,7 +794,7 @@ function Dashboard({ site, inputs, logs, transactions }) {
 
       <Section title={t('section.financials')}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-          <Tile label={t('tile.netRevenue')} value={fmtETB(calc.netRevenue)} unit="ETB" sub={t('tile.afterRoyalty')} />
+          <Tile label={t('tile.revenue')} value={fmtETB(calc.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
           <Tile label={t('tile.operatingCosts')} value={fmtETB(calc.totalCosts)} unit="ETB" sub={`${fmtETB(calc.costPerGram)} ETB/g`} alert={calc.costPerGram > Number(inputs.gold_price)} />
           <Tile label={t('tile.profitShare')} value={fmtETB(calc.profitSharePaid)} unit="ETB" />
           <Tile label={t('tile.netProfit')} value={fmtETB(calc.profit)} unit="ETB" alert={calc.profit < 0} />
@@ -809,9 +836,9 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
     date: todayISO(),
     cleaning_hrs: '',
     prep_hrs: '',
+    idle_hrs: '',
     gold_g: '',
     fuel_received_barrels: '',
-    machine_hrs_topped_up: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -826,16 +853,16 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
       date: form.date,
       cleaning_hrs: Number(form.cleaning_hrs) || 0,
       prep_hrs: Number(form.prep_hrs) || 0,
+      idle_hrs: Number(form.idle_hrs) || 0,
       gold_g: Number(form.gold_g) || 0,
       fuel_received_barrels: Number(form.fuel_received_barrels) || 0,
-      machine_hrs_topped_up: Number(form.machine_hrs_topped_up) || 0,
       notes: form.notes || null,
     };
     const { error } = await supabase.from('daily_logs').upsert(payload, { onConflict: 'site_id,date' });
     setSaving(false);
     if (error) { setError(error.message); return; }
     setShowForm(false);
-    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', gold_g: '', fuel_received_barrels: '', machine_hrs_topped_up: '', notes: '' });
+    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', idle_hrs: '', gold_g: '', fuel_received_barrels: '', notes: '' });
     onRefresh();
   };
 
@@ -861,8 +888,8 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
             <Field label={t('daily.goldProduced')} type="number" value={form.gold_g} onChange={(v) => setForm({ ...form, gold_g: v })} />
             <Field label={t('daily.cleaningHours')} type="number" value={form.cleaning_hrs} onChange={(v) => setForm({ ...form, cleaning_hrs: v })} />
             <Field label={t('daily.prepHours')} type="number" value={form.prep_hrs} onChange={(v) => setForm({ ...form, prep_hrs: v })} />
+            <Field label={t('daily.idleHours')} type="number" value={form.idle_hrs} onChange={(v) => setForm({ ...form, idle_hrs: v })} />
             <Field label={t('daily.fuelReceived')} type="number" value={form.fuel_received_barrels} onChange={(v) => setForm({ ...form, fuel_received_barrels: v })} />
-            <Field label={t('daily.machineTopUp')} type="number" value={form.machine_hrs_topped_up} onChange={(v) => setForm({ ...form, machine_hrs_topped_up: v })} />
           </div>
           <div className="mt-3">
             <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">{t('daily.notes')}</label>
@@ -892,24 +919,28 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
               <th className="px-3 py-2 text-left">{t('daily.colDate')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colClean')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colPrep')}</th>
+              <th className="px-3 py-2 text-right">{t('daily.colIdle')}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t('daily.colTotal')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colGold')}</th>
               <th className="px-3 py-2 text-right">{t('daily.colFuelIn')}</th>
-              <th className="px-3 py-2 text-right">{t('daily.colTopUp')}</th>
               <th className="px-3 py-2 text-left">{t('daily.colNotes')}</th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 && (
-              <tr><td colSpan="7" className="px-3 py-8 text-center text-stone-400">{t('daily.noLogs')}</td></tr>
+              <tr><td colSpan="8" className="px-3 py-8 text-center text-stone-400">{t('daily.noLogs')}</td></tr>
             )}
             {logs.map((l) => (
               <tr key={l.id} className="border-t border-stone-100">
                 <td className="px-3 py-2 text-stone-900 font-medium">{l.date}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.cleaning_hrs, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.prep_hrs, 1)}</td>
+                <td className="px-3 py-2 text-right text-stone-400">{l.idle_hrs > 0 ? fmtNum(l.idle_hrs, 1) : '—'}</td>
+                <td className="px-3 py-2 text-right font-semibold">
+                  {fmtNum((Number(l.cleaning_hrs) || 0) + (Number(l.prep_hrs) || 0) + (Number(l.idle_hrs) || 0), 1)}
+                </td>
                 <td className="px-3 py-2 text-right font-medium text-amber-700">{fmtNum(l.gold_g, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.fuel_received_barrels, 1)}</td>
-                <td className="px-3 py-2 text-right">{fmtNum(l.machine_hrs_topped_up, 0)}</td>
                 <td className="px-3 py-2 text-stone-500">{l.notes || '—'}</td>
               </tr>
             ))}
@@ -941,16 +972,14 @@ function Field({ label, type = 'text', value, onChange }) {
 function Transactions({ site, transactions, profile, onRefresh }) {
   const { t } = useT();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    date: todayISO(),
-    amount: '',
-    type: 'expense',
-    category: 'Fuel',
-    paid_by: '',
-    notes: '',
-  });
+  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '', fuel_barrels_topped_up: '', machine_hrs_topped_up: '' };
+  const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const handleTypeChange = (newType) => {
+    setForm({ ...form, type: newType, category: newType === 'credit' ? 'Gold Sale' : 'Fuel', gold_grams_sold: '' });
+  };
 
   const handleSave = async () => {
     setError('');
@@ -965,12 +994,18 @@ function Transactions({ site, transactions, profile, onRefresh }) {
       category: form.category,
       paid_by: form.paid_by || null,
       notes: form.notes || null,
+      gold_grams_sold: (form.type === 'credit' && form.category === 'Gold Sale' && form.gold_grams_sold)
+        ? Number(form.gold_grams_sold) : null,
+      fuel_barrels_topped_up: (form.type === 'expense' && form.category === 'Fuel' && form.fuel_barrels_topped_up)
+        ? Number(form.fuel_barrels_topped_up) : null,
+      machine_hrs_topped_up: (form.type === 'expense' && form.category === 'Machine Rental' && form.machine_hrs_topped_up)
+        ? Number(form.machine_hrs_topped_up) : null,
     };
     const { error } = await supabase.from('transactions').insert(payload);
     setSaving(false);
     if (error) { setError(error.message); return; }
     setShowForm(false);
-    setForm({ date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '' });
+    setForm(emptyForm);
     onRefresh();
   };
 
@@ -1003,7 +1038,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
               <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">{t('tx.type')}</label>
               <select
                 value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
+                onChange={(e) => handleTypeChange(e.target.value)}
                 className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700"
               >
                 <option value="expense">{t('tx.expenseDebit')}</option>
@@ -1018,9 +1053,23 @@ function Transactions({ site, transactions, profile, onRefresh }) {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700"
               >
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {(form.type === 'credit' ? CREDIT_CATEGORIES : CATEGORIES).map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </div>
+            {form.type === 'credit' && form.category === 'Gold Sale' && (
+              <Field label={t('tx.gramsSold')} type="number" value={form.gold_grams_sold}
+                onChange={(v) => setForm({ ...form, gold_grams_sold: v })} />
+            )}
+            {form.type === 'expense' && form.category === 'Fuel' && (
+              <Field label={t('tx.barrelsReceived')} type="number" value={form.fuel_barrels_topped_up}
+                onChange={(v) => setForm({ ...form, fuel_barrels_topped_up: v })} />
+            )}
+            {form.type === 'expense' && form.category === 'Machine Rental' && (
+              <Field label={t('tx.hrsAdded')} type="number" value={form.machine_hrs_topped_up}
+                onChange={(v) => setForm({ ...form, machine_hrs_topped_up: v })} />
+            )}
             <Field label={t('tx.paidBy')} value={form.paid_by} onChange={(v) => setForm({ ...form, paid_by: v })} />
           </div>
           <div className="mt-3">
@@ -1062,7 +1111,18 @@ function Transactions({ site, transactions, profile, onRefresh }) {
             {transactions.map((tx) => (
               <tr key={tx.id} className="border-t border-stone-100">
                 <td className="px-3 py-2 text-stone-900 font-medium">{tx.date}</td>
-                <td className="px-3 py-2">{tx.category}</td>
+                <td className="px-3 py-2">
+                  {tx.category}
+                  {tx.category === 'Gold Sale' && tx.gold_grams_sold > 0 && (
+                    <span className="ml-1 text-[10px] text-amber-700">({fmtNum(tx.gold_grams_sold, 1)}g)</span>
+                  )}
+                  {tx.category === 'Fuel' && tx.fuel_barrels_topped_up > 0 && (
+                    <span className="ml-1 text-[10px] text-blue-700">(+{fmtNum(tx.fuel_barrels_topped_up, 0)} bbl)</span>
+                  )}
+                  {tx.category === 'Machine Rental' && tx.machine_hrs_topped_up > 0 && (
+                    <span className="ml-1 text-[10px] text-violet-700">(+{fmtNum(tx.machine_hrs_topped_up, 0)} hrs)</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 ${tx.type === 'expense' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {tx.type === 'expense' ? t('tx.expense') : t('tx.credit')}
@@ -1208,6 +1268,116 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 }
 
 // ============================================================
+// SITE PICKER
+// ============================================================
+function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', location: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleCreate = async () => {
+    setError('');
+    setSaving(true);
+    const { data: newSite, error: sErr } = await supabase
+      .from('sites')
+      .insert({ name: form.name.trim(), location: form.location.trim() })
+      .select()
+      .single();
+    if (sErr) { setError(sErr.message); setSaving(false); return; }
+    await supabase.from('inputs').insert({
+      site_id: newSite.id,
+      gold_price: 0, fuel_price: 0, rental_rate: 0,
+      royalty_rate: 0.07, landowner_share: 0.30,
+      target_cash_reserve: 0, efficiency_threshold: 0,
+      opening_cash: 0, machine_hrs_opening: 0,
+      fuel_barrels_opening: 0, fuel_per_barrel: 200,
+      cleaning_fuel_rate: 25, prep_fuel_rate: 20,
+    });
+    setSaving(false);
+    setShowCreate(false);
+    setForm({ name: '', location: '' });
+    await onRefreshSites();
+    onSelect(newSite);
+  };
+
+  return (
+    <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-4 py-12" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <div className="w-full max-w-xl">
+        <div className="flex items-center gap-3 mb-8">
+          <img src={logoShield} alt="" className="w-8 h-8" />
+          <div>
+            <div className="text-sm tracking-widest uppercase font-semibold text-stone-900">Armada Mining</div>
+            <div className="text-[10px] uppercase tracking-widest text-stone-500">
+              {sites.length > 0 ? 'Select a site to continue' : 'No sites assigned yet'}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {sites.map((s) => (
+            <button key={s.id} onClick={() => onSelect(s)}
+              className="w-full text-left bg-white border border-stone-200 px-5 py-4 hover:border-amber-700 hover:bg-amber-50 transition-colors group">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-stone-900 group-hover:text-amber-800">{s.name}</div>
+                  {s.location && <div className="text-[10px] uppercase tracking-widest text-stone-500 mt-0.5">{s.location}</div>}
+                </div>
+                <div className="text-stone-400 group-hover:text-amber-700 text-xs uppercase tracking-widest">Enter →</div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {sites.length === 0 && profile.role !== 'super_admin' && (
+          <div className="text-center py-8 text-stone-400 text-sm">Contact your admin to be assigned to a site.</div>
+        )}
+
+        {profile.role === 'super_admin' && (
+          <div className="mt-6">
+            {!showCreate ? (
+              <button onClick={() => setShowCreate(true)}
+                className="w-full py-3 text-xs uppercase tracking-widest text-stone-500 border border-dashed border-stone-300 hover:border-amber-700 hover:text-amber-700 transition-colors">
+                + New Site
+              </button>
+            ) : (
+              <div className="bg-white border border-stone-200 p-4">
+                <div className="text-[10px] uppercase tracking-widest text-stone-500 mb-3 font-semibold">New Site</div>
+                <div className="grid gap-3">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">Site Name</label>
+                    <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="e.g. Armada North"
+                      className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">Location</label>
+                    <input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
+                      placeholder="e.g. Oromia Region"
+                      className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                </div>
+                {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 mt-3">{error}</div>}
+                <div className="flex gap-2 mt-3">
+                  <button onClick={handleCreate} disabled={saving || !form.name.trim()}
+                    className="bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">
+                    {saving ? 'Creating…' : 'Create Site'}
+                  </button>
+                  <button onClick={() => { setShowCreate(false); setError(''); setForm({ name: '', location: '' }); }}
+                    className="px-6 py-2 text-xs uppercase tracking-widest text-stone-600 hover:text-stone-900 border border-stone-300">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // APP ROOT
 // ============================================================
 export default function App() {
@@ -1255,9 +1425,14 @@ export default function App() {
       const { data: ss, error: sErr } = await supabase.from('sites').select('*').order('name');
       if (sErr) { setBootError(sErr.message); return; }
       setSites(ss || []);
-      if (ss && ss.length > 0) setSite(ss[0]);
+      if (ss && ss.length === 1) setSite(ss[0]);
     })();
   }, [session]);
+
+  const refreshSites = async () => {
+    const { data: ss } = await supabase.from('sites').select('*').order('name');
+    setSites(ss || []);
+  };
 
   // Load site data
   const refreshSiteData = async () => {
@@ -1307,11 +1482,24 @@ export default function App() {
     );
   }
 
-  if (!profile || !site) {
+  if (!profile) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center text-stone-500 text-sm" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
         Loading profile…
       </div>
+    );
+  }
+
+  if (!site) {
+    return (
+      <LocaleProvider>
+        <SitePicker
+          sites={sites}
+          profile={profile}
+          onSelect={(s) => setSite(s)}
+          onRefreshSites={refreshSites}
+        />
+      </LocaleProvider>
     );
   }
 
@@ -1322,7 +1510,7 @@ export default function App() {
         profile={profile}
         site={site}
         sites={sites}
-        onSiteChange={(id) => setSite(sites.find((s) => s.id === id))}
+        onSwitchSite={() => setSite(null)}
         page={page}
         setPage={setPage}
         onLogout={handleLogout}
