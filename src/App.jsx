@@ -26,7 +26,10 @@ const weekStart = (dateStr) => {
 
 const CATEGORIES = [
   'Fuel', 'Machine Rental', 'Crew Salaries', 'Accommodation & Food',
-  'Vehicle / Site Support', 'Transport', 'Maintenance', 'Other', 'Profit Share'
+  'Vehicle / Site Support', 'Transport', 'Maintenance',
+  'Government', 'Royalty', 'Commission', 'Medical',
+  'Utilities', 'Asset Purchase', 'Loan Return',
+  'Other', 'Profit Share',
 ];
 
 const CREDIT_CATEGORIES = ['Gold Sale', 'Loan', 'Investment', 'Other Income'];
