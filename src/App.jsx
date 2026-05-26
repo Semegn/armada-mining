@@ -522,8 +522,10 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const grossGold = snapLogs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
   const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
 
-  const totalCosts = snapTxs.filter((t) => t.type === 'expense' && t.category !== 'Profit Share').reduce((s, t) => s + Number(t.amount), 0);
+  // Operating costs exclude Loan Return — loans only touch cash, not P&L
+  const totalCosts = snapTxs.filter((t) => t.type === 'expense' && t.category !== 'Profit Share' && t.category !== 'Loan Return').reduce((s, t) => s + Number(t.amount), 0);
   const profitSharePaid = snapTxs.filter((t) => t.type === 'expense' && t.category === 'Profit Share').reduce((s, t) => s + Number(t.amount), 0);
+  const loanReturns = snapTxs.filter((t) => t.type === 'expense' && t.category === 'Loan Return').reduce((s, t) => s + Number(t.amount), 0);
   const totalCredits = snapTxs.filter((t) => t.type === 'credit').reduce((s, t) => s + Number(t.amount), 0);
 
   // Actual gold sales (cash received + grams sold)
@@ -533,7 +535,8 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const goldOnHand = Math.max(0, netSaleableGold - goldSold);
 
   const profit = goldSaleRevenue - totalCosts - profitSharePaid;
-  const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
+  // Cash: all credits in (incl. loans) minus operating costs, loan repayments, and profit share
+  const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - loanReturns - profitSharePaid;
   const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
 
   const reasons = [];
@@ -693,12 +696,15 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const grossGold = logs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
     const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
 
-    // Costs
+    // Operating costs exclude Loan Return — loans only touch cash, not P&L
     const totalCosts = transactions
-      .filter((t) => t.type === 'expense' && t.category !== 'Profit Share')
+      .filter((t) => t.type === 'expense' && t.category !== 'Profit Share' && t.category !== 'Loan Return')
       .reduce((s, t) => s + Number(t.amount), 0);
     const profitSharePaid = transactions
       .filter((t) => t.type === 'expense' && t.category === 'Profit Share')
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const loanReturns = transactions
+      .filter((t) => t.type === 'expense' && t.category === 'Loan Return')
       .reduce((s, t) => s + Number(t.amount), 0);
     const totalCredits = transactions
       .filter((t) => t.type === 'credit')
@@ -712,7 +718,8 @@ function Dashboard({ site, inputs, logs, transactions }) {
 
     const profit = goldSaleRevenue - totalCosts - profitSharePaid;
     const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
-    const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
+    // Cash: all credits in (incl. loans) minus operating costs, loan repayments, and profit share
+    const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - loanReturns - profitSharePaid;
 
     // Runways — use last 7 days of data
     const last7 = logs.slice(0, 7);
