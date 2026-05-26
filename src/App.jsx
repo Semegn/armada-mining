@@ -361,7 +361,7 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
               <div className="text-base font-semibold text-stone-900">{site?.name || '—'}</div>
               {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
             </div>
-            {sites.length > 1 && (
+            {(profile?.role === 'super_admin' || sites.length > 1) && (
               <button onClick={onSwitchSite}
                 className="text-[10px] uppercase tracking-widest text-stone-400 hover:text-amber-700 transition-colors border border-stone-200 hover:border-amber-700 px-3 py-1.5">
                 ← Sites
@@ -1404,7 +1404,8 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Load profile and sites when session exists
+  // Load profile and sites when session exists — parallel fetch so all
+  // state lands in one render batch (no empty-picker flash).
   useEffect(() => {
     if (!session) {
       setProfile(null); setSites([]); setSite(null);
@@ -1412,22 +1413,23 @@ export default function App() {
     }
     (async () => {
       setBootError('');
-      const { data: prof, error: pErr } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle();
-      if (pErr) { setBootError(pErr.message); return; }
-      if (!prof) { setBootError('No profile found for this account. Contact super admin.'); return; }
-      setProfile(prof);
+      const [profResult, sitesResult] = await Promise.all([
+        supabase.from('users').select('*').eq('id', session.user.id).maybeSingle(),
+        supabase.from('sites').select('*').order('name'),
+      ]);
+      if (profResult.error) { setBootError(profResult.error.message); return; }
+      if (!profResult.data) { setBootError('No profile found for this account. Contact super admin.'); return; }
+      if (sitesResult.error) { setBootError(sitesResult.error.message); return; }
 
-      // Load sites (RLS will filter)
-      const { data: ss, error: sErr } = await supabase.from('sites').select('*').order('name');
-      if (sErr) { setBootError(sErr.message); return; }
-      setSites(ss || []);
-      if (ss && ss.length === 1) {
+      const prof = profResult.data;
+      const ss = sitesResult.data || [];
+
+      // All three updates in one synchronous block → React batches into one render
+      setProfile(prof);
+      setSites(ss);
+      if (ss.length === 1) {
         setSite(ss[0]);
-      } else if (ss && ss.length > 1) {
+      } else if (ss.length > 1) {
         try {
           const savedId = localStorage.getItem('armada_site_id');
           const remembered = savedId ? ss.find((s) => s.id === savedId) : null;
