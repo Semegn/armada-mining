@@ -1425,7 +1425,13 @@ export default function App() {
       const { data: ss, error: sErr } = await supabase.from('sites').select('*').order('name');
       if (sErr) { setBootError(sErr.message); return; }
       setSites(ss || []);
-      if (ss && ss.length === 1) setSite(ss[0]);
+      if (ss && ss.length === 1) {
+        setSite(ss[0]);
+      } else if (ss && ss.length > 1) {
+        const savedId = localStorage.getItem('armada_site_id');
+        const remembered = savedId ? ss.find((s) => s.id === savedId) : null;
+        if (remembered) setSite(remembered);
+      }
     })();
   }, [session]);
 
@@ -1496,7 +1502,7 @@ export default function App() {
         <SitePicker
           sites={sites}
           profile={profile}
-          onSelect={(s) => setSite(s)}
+          onSelect={(s) => { localStorage.setItem('armada_site_id', s.id); setSite(s); }}
           onRefreshSites={refreshSites}
         />
       </LocaleProvider>
@@ -1510,7 +1516,7 @@ export default function App() {
         profile={profile}
         site={site}
         sites={sites}
-        onSwitchSite={() => setSite(null)}
+        onSwitchSite={() => { localStorage.removeItem('armada_site_id'); setSite(null); }}
         page={page}
         setPage={setPage}
         onLogout={handleLogout}
