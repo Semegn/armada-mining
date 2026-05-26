@@ -29,6 +29,8 @@ const CATEGORIES = [
   'Vehicle / Site Support', 'Transport', 'Maintenance', 'Other', 'Profit Share'
 ];
 
+const CREDIT_CATEGORIES = ['Gold Sale', 'Loan', 'Investment', 'Other Income'];
+
 // ============================================================
 // LOCALIZATION
 // ============================================================
@@ -54,7 +56,9 @@ const EN_STRINGS = {
   'tile.goldProduced': 'Gold Produced', 'tile.netSaleable': 'Net Saleable', 'tile.totalHours': 'Total Hours',
   'tile.efficiency': 'Efficiency', 'tile.netRevenue': 'Net Revenue', 'tile.operatingCosts': 'Operating Costs',
   'tile.profitShare': 'Profit Share', 'tile.netProfit': 'Net Profit',
+  'tile.goldOnHand': 'Gold on Hand', 'tile.goldSold': 'sold', 'tile.revenue': 'Revenue',
   'tile.afterRoyalty': 'after royalty', 'tile.afterLandownerShare': 'after landowner share',
+  'tile.fromSales': 'from gold sales', 'tile.unsold': 'unsold',
   'tile.barrels': 'barrels', 'tile.hours': 'hours', 'tile.grams': 'grams', 'tile.days': 'days', 'tile.asOf': 'as of',
   // Daily Logs
   'daily.title': 'Daily Logs', 'daily.entries': 'entries', 'daily.newLog': '+ New Log', 'daily.cancel': 'Cancel',
@@ -72,6 +76,8 @@ const EN_STRINGS = {
   'tx.colDate': 'Date', 'tx.colCategory': 'Category', 'tx.colType': 'Type',
   'tx.colAmount': 'Amount', 'tx.colPaidBy': 'Paid By', 'tx.colNotes': 'Notes',
   'tx.expense': 'expense', 'tx.credit': 'credit',
+  'tx.gramsSold': 'Grams Sold', 'tx.goldSale': 'Gold Sale', 'tx.loan': 'Loan',
+  'tx.investment': 'Investment', 'tx.otherIncome': 'Other Income',
   // Weekly
   'weekly.selectWeek': 'Select Week', 'weekly.noData': 'No log data yet — add daily logs first.',
   'weekly.noSelection': 'Select a highlighted week to view snapshot.', 'weekly.through': 'through',
@@ -506,14 +512,18 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
 
   const grossGold = snapLogs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
   const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
-  const grossRevenue = netSaleableGold * Number(inputs.gold_price);
-  const netRevenue = grossRevenue * (1 - Number(inputs.royalty_rate));
 
   const totalCosts = snapTxs.filter((t) => t.type === 'expense' && t.category !== 'Profit Share').reduce((s, t) => s + Number(t.amount), 0);
   const profitSharePaid = snapTxs.filter((t) => t.type === 'expense' && t.category === 'Profit Share').reduce((s, t) => s + Number(t.amount), 0);
   const totalCredits = snapTxs.filter((t) => t.type === 'credit').reduce((s, t) => s + Number(t.amount), 0);
 
-  const profit = netRevenue - totalCosts - profitSharePaid;
+  // Actual gold sales (cash received + grams sold)
+  const goldSalesTxs = snapTxs.filter((t) => t.type === 'credit' && t.category === 'Gold Sale');
+  const goldSold = goldSalesTxs.reduce((s, t) => s + (Number(t.gold_grams_sold) || 0), 0);
+  const goldSaleRevenue = goldSalesTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const goldOnHand = Math.max(0, netSaleableGold - goldSold);
+
+  const profit = goldSaleRevenue - totalCosts - profitSharePaid;
   const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
   const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
 
@@ -530,9 +540,9 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   return {
     weekEnd, status, reasons,
     fuelRemainingBarrels, machineHrsRemaining,
-    grossGold, netSaleableGold, cleaningHrs, prepHrs, totalHrs,
+    grossGold, netSaleableGold, goldSold, goldOnHand, cleaningHrs, prepHrs, totalHrs,
     avgGperHr: totalHrs > 0 ? grossGold / totalHrs : 0,
-    netRevenue, totalCosts, profitSharePaid, profit, costPerGram, cashOnHand,
+    goldSaleRevenue, totalCosts, profitSharePaid, profit, costPerGram, cashOnHand,
     logCount: snapLogs.length, txCount: snapTxs.length,
   };
 }
@@ -599,8 +609,10 @@ function WeeklyReport({ inputs, logs, transactions }) {
 
             {/* Working Capital */}
             <Section title={t('section.workingCapital')}>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-stone-200">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-stone-200">
                 <Tile label={t('tile.cashOnHand')} value={fmtETB(snap.cashOnHand)} unit="ETB" />
+                <Tile label={t('tile.goldOnHand')} value={fmtNum(snap.goldOnHand, 1)} unit={t('tile.grams')}
+                  sub={`${fmtNum(snap.goldSold, 1)}g sold`} />
                 <Tile label={t('tile.fuelRemaining')} value={fmtNum(snap.fuelRemainingBarrels, 1)} unit={t('tile.barrels')}
                   sub={`${t('tile.asOf')} ${snap.weekEnd}`} alert={snap.fuelRemainingBarrels < 7} />
                 <Tile label={t('tile.machineHours')} value={fmtNum(snap.machineHrsRemaining, 0)} unit={t('tile.hours')}
@@ -623,7 +635,7 @@ function WeeklyReport({ inputs, logs, transactions }) {
             {/* Financials */}
             <Section title={t('section.financialsWeek')}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-                <Tile label={t('tile.netRevenue')} value={fmtETB(snap.netRevenue)} unit="ETB" sub={t('tile.afterRoyalty')} />
+                <Tile label={t('tile.revenue')} value={fmtETB(snap.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
                 <Tile label={t('tile.operatingCosts')} value={fmtETB(snap.totalCosts)} unit="ETB"
                   sub={`${fmtETB(snap.costPerGram)} ETB/g`} alert={snap.costPerGram > Number(inputs.gold_price)} />
                 <Tile label={t('tile.profitShare')} value={fmtETB(snap.profitSharePaid)} unit="ETB" />
@@ -668,11 +680,7 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const grossGold = logs.reduce((s, l) => s + (Number(l.gold_g) || 0), 0);
     const netSaleableGold = grossGold * (1 - Number(inputs.landowner_share));
 
-    // Revenue & costs
-    const grossRevenue = netSaleableGold * Number(inputs.gold_price);
-    const royalty = grossRevenue * Number(inputs.royalty_rate);
-    const netRevenue = grossRevenue - royalty;
-
+    // Costs
     const totalCosts = transactions
       .filter((t) => t.type === 'expense' && t.category !== 'Profit Share')
       .reduce((s, t) => s + Number(t.amount), 0);
@@ -683,8 +691,13 @@ function Dashboard({ site, inputs, logs, transactions }) {
       .filter((t) => t.type === 'credit')
       .reduce((s, t) => s + Number(t.amount), 0);
 
-    const operatingProfit = netRevenue - totalCosts;
-    const profit = operatingProfit - profitSharePaid;
+    // Actual gold sales (cash received + grams sold)
+    const goldSalesTxs = transactions.filter((t) => t.type === 'credit' && t.category === 'Gold Sale');
+    const goldSold = goldSalesTxs.reduce((s, t) => s + (Number(t.gold_grams_sold) || 0), 0);
+    const goldSaleRevenue = goldSalesTxs.reduce((s, t) => s + Number(t.amount), 0);
+    const goldOnHand = Math.max(0, netSaleableGold - goldSold);
+
+    const profit = goldSaleRevenue - totalCosts - profitSharePaid;
     const costPerGram = netSaleableGold > 0 ? totalCosts / netSaleableGold : 0;
     const cashOnHand = Number(inputs.opening_cash) + totalCredits - totalCosts - profitSharePaid;
 
@@ -712,8 +725,8 @@ function Dashboard({ site, inputs, logs, transactions }) {
 
     return {
       latestLogDate: latestLog?.date,
-      grossGold, netSaleableGold,
-      grossRevenue, netRevenue, totalCosts, operatingProfit, profitSharePaid, profit, costPerGram,
+      grossGold, netSaleableGold, goldSold, goldOnHand,
+      goldSaleRevenue, totalCosts, profitSharePaid, profit, costPerGram,
       cashOnHand, fuelRemainingBarrels, machineHrsRemaining,
       fuelRunwayDays, machineRunwayDays, wcRunway,
       totalHrs, cleaningHrs, prepHrs,
@@ -745,8 +758,10 @@ function Dashboard({ site, inputs, logs, transactions }) {
       </div>
 
       <Section title={t('section.workingCapital')}>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-stone-200">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-stone-200">
           <Tile label={t('tile.cashOnHand')} value={fmtETB(calc.cashOnHand)} unit="ETB" />
+          <Tile label={t('tile.goldOnHand')} value={fmtNum(calc.goldOnHand, 1)} unit={t('tile.grams')}
+            sub={`${fmtNum(calc.goldSold, 1)}g ${t('tile.goldSold') || 'sold'}`} />
           <Tile label={t('tile.fuelRemaining')} value={fmtNum(calc.fuelRemainingBarrels, 1)} unit={t('tile.barrels')}
             sub={calc.fuelRunwayDays !== null ? `${fmtNum(calc.fuelRunwayDays, 1)} ${t('tile.days')}` : '—'}
             alert={calc.fuelRemainingBarrels < 7} />
@@ -767,7 +782,7 @@ function Dashboard({ site, inputs, logs, transactions }) {
 
       <Section title={t('section.financials')}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-          <Tile label={t('tile.netRevenue')} value={fmtETB(calc.netRevenue)} unit="ETB" sub={t('tile.afterRoyalty')} />
+          <Tile label={t('tile.revenue')} value={fmtETB(calc.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
           <Tile label={t('tile.operatingCosts')} value={fmtETB(calc.totalCosts)} unit="ETB" sub={`${fmtETB(calc.costPerGram)} ETB/g`} alert={calc.costPerGram > Number(inputs.gold_price)} />
           <Tile label={t('tile.profitShare')} value={fmtETB(calc.profitSharePaid)} unit="ETB" />
           <Tile label={t('tile.netProfit')} value={fmtETB(calc.profit)} unit="ETB" alert={calc.profit < 0} />
@@ -941,16 +956,14 @@ function Field({ label, type = 'text', value, onChange }) {
 function Transactions({ site, transactions, profile, onRefresh }) {
   const { t } = useT();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    date: todayISO(),
-    amount: '',
-    type: 'expense',
-    category: 'Fuel',
-    paid_by: '',
-    notes: '',
-  });
+  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '' };
+  const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const handleTypeChange = (newType) => {
+    setForm({ ...form, type: newType, category: newType === 'credit' ? 'Gold Sale' : 'Fuel', gold_grams_sold: '' });
+  };
 
   const handleSave = async () => {
     setError('');
@@ -965,12 +978,14 @@ function Transactions({ site, transactions, profile, onRefresh }) {
       category: form.category,
       paid_by: form.paid_by || null,
       notes: form.notes || null,
+      gold_grams_sold: (form.type === 'credit' && form.category === 'Gold Sale' && form.gold_grams_sold)
+        ? Number(form.gold_grams_sold) : null,
     };
     const { error } = await supabase.from('transactions').insert(payload);
     setSaving(false);
     if (error) { setError(error.message); return; }
     setShowForm(false);
-    setForm({ date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '' });
+    setForm(emptyForm);
     onRefresh();
   };
 
@@ -1003,7 +1018,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
               <label className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">{t('tx.type')}</label>
               <select
                 value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
+                onChange={(e) => handleTypeChange(e.target.value)}
                 className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700"
               >
                 <option value="expense">{t('tx.expenseDebit')}</option>
@@ -1018,9 +1033,15 @@ function Transactions({ site, transactions, profile, onRefresh }) {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700"
               >
-                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {(form.type === 'credit' ? CREDIT_CATEGORIES : CATEGORIES).map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </div>
+            {form.type === 'credit' && form.category === 'Gold Sale' && (
+              <Field label={t('tx.gramsSold')} type="number" value={form.gold_grams_sold}
+                onChange={(v) => setForm({ ...form, gold_grams_sold: v })} />
+            )}
             <Field label={t('tx.paidBy')} value={form.paid_by} onChange={(v) => setForm({ ...form, paid_by: v })} />
           </div>
           <div className="mt-3">
@@ -1062,7 +1083,12 @@ function Transactions({ site, transactions, profile, onRefresh }) {
             {transactions.map((tx) => (
               <tr key={tx.id} className="border-t border-stone-100">
                 <td className="px-3 py-2 text-stone-900 font-medium">{tx.date}</td>
-                <td className="px-3 py-2">{tx.category}</td>
+                <td className="px-3 py-2">
+                  {tx.category}
+                  {tx.category === 'Gold Sale' && tx.gold_grams_sold > 0 && (
+                    <span className="ml-1 text-[10px] text-amber-700">({fmtNum(tx.gold_grams_sold, 1)}g)</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 ${tx.type === 'expense' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {tx.type === 'expense' ? t('tx.expense') : t('tx.credit')}
