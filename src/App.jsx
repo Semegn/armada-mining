@@ -2,10 +2,323 @@ import React, { useState, useEffect, useMemo, useContext, useCallback, createCon
 import { createClient } from '@supabase/supabase-js';
 import logoShield from './assets/logo-shield.png';
 
-const supabase = createClient(
+const realSupabase = createClient(
   'https://fweibxyncvjmuxxbqhan.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3ZWlieHluY3ZqbXV4eGJxaGFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1OTM5NjAsImV4cCI6MjA5NTE2OTk2MH0.JQxS7MtsZaa_Gb59ZX3Jf4q9DwDTyWfS5TC7qJryA_A'
 );
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const weekStart = (dateStr) => {
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+  const ws = new Date(d.setDate(diff));
+  return ws.toISOString().slice(0, 10);
+};
+
+const isDemoActive = () => {
+  try {
+    if (localStorage.getItem('armada_demo_active') === 'true') return true;
+    
+    // Auto-detect if user was already logged in as demo user from a previous session
+    const key = 'sb-fweibxyncvjmuxxbqhan-auth-token';
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.user?.email === 'demo@armadamining.com') {
+        localStorage.setItem('armada_demo_active', 'true');
+        return true;
+      }
+    }
+  } catch (_) {}
+  return false;
+};
+
+class MockQueryBuilder {
+  constructor(table) {
+    this.table = table;
+    this.filters = [];
+    this.orderByField = null;
+    this.orderByAsc = true;
+  }
+
+  _load() {
+    const key = `armada_demo_${this.table}`;
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+    
+    let initial = [];
+    if (this.table === 'users') {
+      initial = [{ id: 'b05f2b9a-69df-4764-bdda-e80b660808dd', name: 'Demo Mode', email: 'demo@armadamining.com', role: 'site_manager' }];
+    } else if (this.table === 'sites') {
+      initial = [{ id: 'demo-site-id', name: 'ARMADA Main (Demo)', location: 'Oromia Region' }];
+    } else if (this.table === 'inputs') {
+      initial = [{
+        id: 'demo-inputs-id',
+        site_id: 'demo-site-id',
+        gold_price: 8200,
+        fuel_price: 130,
+        rental_rate: 15000,
+        royalty_rate: 0.07,
+        landowner_share: 0.30,
+        target_cash_reserve: 500000,
+        efficiency_threshold: 2,
+        opening_cash: 1200000,
+        machine_hrs_opening: 450,
+        fuel_barrels_opening: 60,
+        fuel_per_barrel: 200,
+        cleaning_fuel_rate: 25,
+        prep_fuel_rate: 20
+      }];
+    } else if (this.table === 'daily_logs') {
+      initial = [
+        { id: 'log-1', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: todayISO(), cleaning_hrs: 6, prep_hrs: 3, idle_hrs: 1, gold_g: 38.5, fuel_received_barrels: 0, notes: "Normal shift. Good gold concentration in the north wash plant." },
+        { id: 'log-2', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), cleaning_hrs: 7, prep_hrs: 2, idle_hrs: 0, gold_g: 42.1, fuel_received_barrels: 5, notes: "Received 5 barrels of fuel. Excavator routine service done." },
+        { id: 'log-3', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), cleaning_hrs: 5, prep_hrs: 4, idle_hrs: 2, gold_g: 29.8, fuel_received_barrels: 0, notes: "Minor clay blockage in screen box. Idle time due to belt adjustment." },
+        { id: 'log-4', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 259200000).toISOString().slice(0, 10), cleaning_hrs: 8, prep_hrs: 1, idle_hrs: 0, gold_g: 45.0, fuel_received_barrels: 0, notes: "Excellent recovery day. Crew working very efficiently." },
+        { id: 'log-5', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), cleaning_hrs: 6, prep_hrs: 2, idle_hrs: 1, gold_g: 34.2, fuel_received_barrels: 10, notes: "Bulk fuel delivery of 10 barrels. Rain in the evening but did not affect cleaning." }
+      ];
+    } else if (this.table === 'transactions') {
+      initial = [
+        { id: 'tx-1', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: todayISO(), week_start: weekStart(todayISO()), amount: 85000, type: "expense", category: "Crew Salaries", paid_by: "Armada", notes: "Weekly crew wages for Site A team." },
+        { id: 'tx-2', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 86400000).toISOString().slice(0, 10)), amount: 130000, type: "expense", category: "Fuel", paid_by: "Armada", notes: "Fuel delivery payment (5 barrels received).", fuel_barrels_topped_up: 5 },
+        { id: 'tx-3', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 172800000).toISOString().slice(0, 10)), amount: 482000, type: "credit", category: "Gold Sale", paid_by: "Partner B", notes: "Sold 60 grams of gold.", gold_grams_sold: 60 },
+        { id: 'tx-4', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 259200000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 259200000).toISOString().slice(0, 10)), amount: 45000, type: "expense", category: "Maintenance", paid_by: "Armada", notes: "Excavator hydraulic hose replacement and oil top-up." },
+        { id: 'tx-5', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 345600000).toISOString().slice(0, 10)), amount: 300000, type: "expense", category: "Machine Rental", paid_by: "Armada", notes: "Topped up 20 hours of contracted machine time.", machine_hrs_topped_up: 20 }
+      ];
+    }
+    
+    try {
+      localStorage.setItem(key, JSON.stringify(initial));
+    } catch (_) {}
+    return initial;
+  }
+
+  _save(data) {
+    const key = `armada_demo_${this.table}`;
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (_) {}
+  }
+
+  select(fields) {
+    return this;
+  }
+
+  eq(field, val) {
+    this.filters.push((row) => row[field] === val);
+    return this;
+  }
+
+  order(field, options = {}) {
+    this.orderByField = field;
+    this.orderByAsc = options.ascending !== false;
+    return this;
+  }
+
+  maybeSingle() {
+    return this.then((res) => {
+      return { data: res.data ? res.data[0] || null : null, error: res.error };
+    });
+  }
+
+  single() {
+    return this.then((res) => {
+      return { data: res.data ? res.data[0] || null : null, error: res.error };
+    });
+  }
+
+  async insert(payload) {
+    const items = this._load();
+    const rows = Array.isArray(payload) ? payload : [payload];
+    const newRows = rows.map((r, i) => {
+      return {
+        id: `demo-${this.table}-${Date.now()}-${i}`,
+        created_at: new Date().toISOString(),
+        ...r
+      };
+    });
+    items.push(...newRows);
+    this._save(items);
+    return { data: Array.isArray(payload) ? newRows : newRows[0], error: null };
+  }
+
+  async upsert(payload, options = {}) {
+    const items = this._load();
+    const rows = Array.isArray(payload) ? payload : [payload];
+    
+    let conflictCols = [];
+    if (options.onConflict) {
+      conflictCols = options.onConflict.split(',');
+    }
+    
+    const updatedRows = [];
+    for (const r of rows) {
+      let idx = -1;
+      if (conflictCols.length > 0) {
+        idx = items.findIndex(item => conflictCols.every(col => String(item[col]) === String(r[col])));
+      }
+      
+      const newRow = {
+        id: idx >= 0 ? items[idx].id : `demo-${this.table}-${Date.now()}`,
+        created_at: idx >= 0 ? items[idx].created_at : new Date().toISOString(),
+        ...r
+      };
+      
+      if (idx >= 0) {
+        items[idx] = newRow;
+      } else {
+        items.push(newRow);
+      }
+      updatedRows.push(newRow);
+    }
+    
+    this._save(items);
+    return { data: Array.isArray(payload) ? updatedRows : updatedRows[0], error: null };
+  }
+
+  async update(payload) {
+    let items = this._load();
+    let updated = [];
+    items = items.map(item => {
+      const match = this.filters.every(f => f(item));
+      if (match) {
+        const u = { ...item, ...payload };
+        updated.push(u);
+        return u;
+      }
+      return item;
+    });
+    this._save(items);
+    return { data: updated, error: null };
+  }
+
+  then(onfulfilled) {
+    let items = this._load();
+    
+    if (this.filters.length > 0) {
+      items = items.filter(item => this.filters.every(f => f(item)));
+    }
+    
+    if (this.orderByField) {
+      items.sort((a, b) => {
+        const valA = a[this.orderByField];
+        const valB = b[this.orderByField];
+        if (valA === valB) return 0;
+        if (valA === null || valA === undefined) return 1;
+        if (valB === null || valB === undefined) return -1;
+        
+        let cmp = 0;
+        if (typeof valA === 'string') {
+          cmp = valA.localeCompare(valB);
+        } else {
+          cmp = valA - valB;
+        }
+        return this.orderByAsc ? cmp : -cmp;
+      });
+    }
+    
+    return Promise.resolve({ data: items, error: null }).then(onfulfilled);
+  }
+}
+
+const authListeners = new Set();
+
+const supabase = {
+  ...realSupabase,
+  
+  auth: {
+    ...realSupabase.auth,
+    
+    async getSession() {
+      if (isDemoActive()) {
+        const mockDemoUser = {
+          id: 'b05f2b9a-69df-4764-bdda-e80b660808dd',
+          email: 'demo@armadamining.com',
+          user_metadata: {},
+          app_metadata: {}
+        };
+        const mockDemoSession = {
+          access_token: 'mock-demo-token',
+          user: mockDemoUser
+        };
+        return { data: { session: mockDemoSession }, error: null };
+      }
+      return realSupabase.auth.getSession();
+    },
+    
+    onAuthStateChange(callback) {
+      authListeners.add(callback);
+      if (isDemoActive()) {
+        const mockDemoUser = {
+          id: 'b05f2b9a-69df-4764-bdda-e80b660808dd',
+          email: 'demo@armadamining.com',
+          user_metadata: {},
+          app_metadata: {}
+        };
+        const mockDemoSession = {
+          access_token: 'mock-demo-token',
+          user: mockDemoUser
+        };
+        setTimeout(() => callback('SIGNED_IN', mockDemoSession), 0);
+      }
+      
+      const res = realSupabase.auth.onAuthStateChange((event, sess) => {
+        if (!isDemoActive()) {
+          callback(event, sess);
+        }
+      });
+      
+      return {
+        data: {
+          subscription: {
+            unsubscribe() {
+              res.data?.subscription?.unsubscribe();
+              authListeners.delete(callback);
+            }
+          }
+        }
+      };
+    },
+    
+    async signInWithPassword(credentials) {
+      if (credentials.email === 'demo@armadamining.com') {
+        localStorage.setItem('armada_demo_active', 'true');
+        const mockDemoUser = {
+          id: 'b05f2b9a-69df-4764-bdda-e80b660808dd',
+          email: 'demo@armadamining.com',
+          user_metadata: {},
+          app_metadata: {}
+        };
+        const mockDemoSession = {
+          access_token: 'mock-demo-token',
+          user: mockDemoUser
+        };
+        authListeners.forEach(listener => listener('SIGNED_IN', mockDemoSession));
+        return { data: { user: mockDemoUser, session: mockDemoSession }, error: null };
+      }
+      
+      localStorage.setItem('armada_demo_active', 'false');
+      return realSupabase.auth.signInWithPassword(credentials);
+    },
+    
+    async signOut() {
+      if (isDemoActive()) {
+        localStorage.setItem('armada_demo_active', 'false');
+        authListeners.forEach(listener => listener('SIGNED_OUT', null));
+        return { error: null };
+      }
+      return realSupabase.auth.signOut();
+    }
+  },
+  
+  from(table) {
+    if (isDemoActive()) {
+      return new MockQueryBuilder(table);
+    }
+    return realSupabase.from(table);
+  }
+};
 
 const fmtETB = (n) => {
   if (n === null || n === undefined || isNaN(n)) return '—';
@@ -14,14 +327,6 @@ const fmtETB = (n) => {
 const fmtNum = (n, d = 1) => {
   if (n === null || n === undefined || isNaN(n)) return '—';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
-};
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const weekStart = (dateStr) => {
-  const d = new Date(dateStr);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday start
-  const ws = new Date(d.setDate(diff));
-  return ws.toISOString().slice(0, 10);
 };
 
 const CATEGORIES = [
@@ -287,6 +592,14 @@ function Login({ onLogin }) {
     else onLogin(data.user);
   };
 
+  const handleDemoLogin = async () => {
+    setError(''); setLoading(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: 'demo@armadamining.com', password: 'password123' });
+    setLoading(false);
+    if (error) setError('Demo account not configured. Admin: Create demo@armadamining.com / password123 in Supabase.');
+    else onLogin(data.user);
+  };
+
   return (
     <div className="h-full bg-stone-50 flex items-center justify-center px-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
       <div className="w-full max-w-sm">
@@ -309,6 +622,17 @@ function Login({ onLogin }) {
           <button onClick={handleLogin} disabled={loading || !email || !password}
             className="w-full bg-stone-900 text-white py-2.5 text-xs uppercase tracking-widest hover:bg-amber-700 disabled:bg-stone-400 transition-colors">
             {loading ? t('auth.signingIn') : t('auth.signIn')}
+          </button>
+
+          <div className="mt-6 mb-4 flex items-center">
+            <div className="flex-1 border-t border-stone-200"></div>
+            <div className="px-3 text-[10px] text-stone-400 uppercase tracking-widest">or</div>
+            <div className="flex-1 border-t border-stone-200"></div>
+          </div>
+
+          <button onClick={handleDemoLogin} disabled={loading}
+            className="w-full bg-white text-stone-700 border border-stone-300 py-2.5 text-xs uppercase tracking-widest hover:bg-stone-50 disabled:bg-stone-100 transition-colors">
+            {loading ? 'Entering Demo…' : 'Try Demo Mode'}
           </button>
         </div>
         <p className="text-center text-xs text-stone-400 mt-6 tracking-wider">{t('brand.version')}</p>
@@ -336,6 +660,27 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
 
   return (
     <div className="h-full flex flex-col" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      {/* Demo Mode Banner */}
+      {isDemoActive() && (
+        <div className="bg-amber-700 text-stone-100 text-[11px] font-semibold tracking-widest uppercase flex items-center justify-between px-4 py-1.5 border-b border-amber-800">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+            <span>Demo Mode Sandbox (Role: Site Manager)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => {
+              if (window.confirm("Reset all demo data (logs, transactions) back to initial snapshot?")) {
+                localStorage.removeItem('armada_demo_daily_logs');
+                localStorage.removeItem('armada_demo_transactions');
+                localStorage.removeItem('armada_demo_inputs');
+                window.location.reload();
+              }
+            }} className="underline bg-amber-800 hover:bg-amber-900 border border-amber-600 px-2 py-0.5 rounded text-[10px] uppercase font-bold transition-colors">
+              Reset Data
+            </button>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <header className="bg-stone-900 text-stone-100 flex-shrink-0">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -823,13 +1168,13 @@ function Section({ title, children }) {
 
 function Tile({ label, value, unit, sub, alert }) {
   return (
-    <div className={`bg-white px-4 py-3 ${alert ? 'ring-2 ring-red-300' : ''}`}>
+    <div className={`px-4 py-3 transition-colors ${alert ? 'bg-red-50/70 border border-red-200 -m-px z-10 relative' : 'bg-white'}`}>
       <div className="text-[10px] uppercase tracking-widest text-stone-500">{label}</div>
       <div className="flex items-baseline gap-1.5 mt-1">
         <div className={`text-xl font-semibold ${alert ? 'text-red-700' : 'text-stone-900'}`}>{value}</div>
         <div className="text-[10px] uppercase tracking-wider text-stone-500">{unit}</div>
       </div>
-      {sub && <div className="text-[10px] text-stone-500 mt-0.5">{sub}</div>}
+      {sub && <div className={`text-[10px] mt-0.5 ${alert ? 'text-red-600' : 'text-stone-500'}`}>{sub}</div>}
     </div>
   );
 }
@@ -1309,6 +1654,39 @@ function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
     onSelect(newSite);
   };
 
+  const handleClone = async (sourceSite) => {
+    if (!window.confirm(`Clone "${sourceSite.name}" as Demo Site?`)) return;
+    setError(''); setSaving(true);
+    
+    const { data: newSite, error: sErr } = await supabase.from('sites')
+      .insert({ name: `${sourceSite.name} (Demo)`, location: sourceSite.location })
+      .select().single();
+      
+    if (sErr) { setError(sErr.message); setSaving(false); return; }
+    
+    const { data: inputs } = await supabase.from('inputs').select('*').eq('site_id', sourceSite.id).maybeSingle();
+    if (inputs) {
+      delete inputs.id; delete inputs.created_at; inputs.site_id = newSite.id;
+      await supabase.from('inputs').insert(inputs);
+    }
+    
+    const { data: logs } = await supabase.from('daily_logs').select('*').eq('site_id', sourceSite.id);
+    if (logs && logs.length > 0) {
+      const newLogs = logs.map(l => { const { id, created_at, ...rest } = l; return { ...rest, site_id: newSite.id }; });
+      await supabase.from('daily_logs').insert(newLogs);
+    }
+    
+    const { data: txs } = await supabase.from('transactions').select('*').eq('site_id', sourceSite.id);
+    if (txs && txs.length > 0) {
+      const newTxs = txs.map(t => { const { id, created_at, ...rest } = t; return { ...rest, site_id: newSite.id }; });
+      await supabase.from('transactions').insert(newTxs);
+    }
+    
+    setSaving(false);
+    await onRefreshSites();
+    alert('Site cloned successfully! Please ensure your Supabase RLS policies allow the demo account to view this new site.');
+  };
+
   return (
     <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center px-4 py-12" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
       <div className="w-full max-w-xl">
@@ -1324,16 +1702,22 @@ function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
 
         <div className="grid gap-3">
           {sites.map((s) => (
-            <button key={s.id} onClick={() => onSelect(s)}
-              className="w-full text-left bg-white border border-stone-200 px-5 py-4 hover:border-amber-700 hover:bg-amber-50 transition-colors group">
+            <div key={s.id} className="w-full text-left bg-white border border-stone-200 px-5 py-4 hover:border-amber-700 hover:bg-amber-50 transition-colors group cursor-pointer" onClick={() => onSelect(s)}>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-stone-900 group-hover:text-amber-800">{s.name}</div>
                   {s.location && <div className="text-[10px] uppercase tracking-widest text-stone-500 mt-0.5">{s.location}</div>}
                 </div>
-                <div className="text-stone-400 group-hover:text-amber-700 text-xs uppercase tracking-widest">Enter →</div>
+                <div className="flex items-center gap-4">
+                  {profile?.role === 'super_admin' && (
+                    <button onClick={(e) => { e.stopPropagation(); handleClone(s); }} className="text-stone-400 hover:text-amber-700 text-[10px] uppercase tracking-widest px-2 py-1 border border-stone-200 hover:border-amber-700 bg-white">
+                      Clone
+                    </button>
+                  )}
+                  <div className="text-stone-400 group-hover:text-amber-700 text-xs uppercase tracking-widest">Enter →</div>
+                </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
 
@@ -1403,10 +1787,16 @@ export default function App() {
   // Auth bootstrap
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user?.email === 'demo@armadamining.com') {
+        localStorage.setItem('armada_demo_active', 'true');
+      }
       setSession(data.session);
       setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+      if (sess?.user?.email === 'demo@armadamining.com') {
+        localStorage.setItem('armada_demo_active', 'true');
+      }
       setSession(sess);
     });
     return () => sub.subscription.unsubscribe();
@@ -1426,10 +1816,19 @@ export default function App() {
         supabase.from('sites').select('*').order('name'),
       ]);
       if (profResult.error) { setBootError(profResult.error.message); return; }
-      if (!profResult.data) { setBootError('No profile found for this account. Contact super admin.'); return; }
+      
+      let prof = profResult.data;
+      if (!prof) {
+        if (session.user.email === 'demo@armadamining.com') {
+          prof = { id: session.user.id, name: 'Demo Mode', role: 'site_manager' };
+        } else {
+          setBootError('No profile found for this account. Contact super admin.'); 
+          return; 
+        }
+      }
+      
       if (sitesResult.error) { setBootError(sitesResult.error.message); return; }
 
-      const prof = profResult.data;
       const ss = sitesResult.data || [];
 
       // All three updates in one synchronous block → React batches into one render
