@@ -41,6 +41,16 @@ In Supabase Authentication, create a user and insert into `users` table with `su
 npm run dev
 ```
 
+## Database changes
+
+Changes to the live database are kept as numbered SQL files in `docs/migrations/`
+(for example `001_lock_record_changes.sql`).
+
+1. Run each new file once, in number order, in Supabase → SQL Editor.
+2. Each file ends with a check query. Confirm the result matches the comment above it.
+3. Never edit a file that has already been run. Add a new numbered file instead.
+4. Each file ends with commented-out UNDO steps in case a change has to be reversed.
+
 ## Deployment
 
 ### Netlify
