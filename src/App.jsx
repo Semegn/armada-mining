@@ -402,6 +402,22 @@ const EN_STRINGS = {
   'lang.translating': 'Translating', 'lang.save': 'Save Translations', 'lang.saving': 'Saving…',
   'lang.english': 'English', 'lang.key': 'Key', 'lang.loading': 'Loading translations…',
   'lang.saved': 'Saved', 'lang.noData': 'No translations loaded yet. Click Auto-Translate or type manually.',
+  // Change history
+  'nav.history': 'History',
+  'hist.title': 'Change History', 'hist.subtitle': 'Every added, changed or deleted record at this site. Read-only.',
+  'hist.loading': 'Loading history…', 'hist.empty': 'No changes recorded yet.', 'hist.error': 'Could not load history:',
+  'hist.showOlder': 'Show older changes',
+  'hist.demoNote': 'History is not recorded in Demo Mode. In the live app, every added, changed or deleted record at a site appears here.',
+  'hist.added': 'Added', 'hist.changed': 'Changed', 'hist.deleted': 'Deleted',
+  'hist.dailyLog': 'Daily log', 'hist.transaction': 'Transaction', 'hist.inputs': 'Inputs',
+  'hist.by': 'by', 'hist.system': 'Supabase (outside the app)', 'hist.unknownUser': 'Unknown user',
+  'hist.noFieldChanges': 'Saved with no visible changes',
+  'hist.f.gold_price': 'Gold Price', 'hist.f.fuel_price': 'Fuel Price', 'hist.f.rental_rate': 'Machine Rental',
+  'hist.f.royalty_rate': 'Royalty Rate', 'hist.f.landowner_share': 'Landowner Share',
+  'hist.f.target_cash_reserve': 'Target Cash Reserve', 'hist.f.efficiency_threshold': 'Efficiency Threshold',
+  'hist.f.opening_cash': 'Opening Cash', 'hist.f.machine_hrs_opening': 'Opening Machine Hours',
+  'hist.f.fuel_barrels_opening': 'Opening Fuel Stock', 'hist.f.fuel_per_barrel': 'Litres per Barrel',
+  'hist.f.cleaning_fuel_rate': 'Cleaning Fuel Rate', 'hist.f.prep_fuel_rate': 'Prep Fuel Rate',
 };
 
 const SUPPORTED_LOCALES = [
@@ -652,6 +668,7 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
     { id: 'daily', label: t('nav.daily') },
     { id: 'transactions', label: t('nav.statement') },
     { id: 'weekly', label: t('nav.weekly') },
+    { id: 'history', label: t('nav.history') },
     ...(profile?.role === 'super_admin' ? [
       { id: 'inputs', label: t('nav.inputs') },
       { id: 'language', label: t('nav.language') },
@@ -1002,6 +1019,159 @@ function WeeklyReport({ inputs, logs, transactions }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CHANGE HISTORY (read-only, every role)
+// ============================================================
+const HISTORY_PAGE_SIZE = 50;
+
+// Fields shown per table, in display order, with their translation keys.
+const HISTORY_FIELDS = {
+  daily_logs: [
+    ['date', 'daily.date'], ['gold_g', 'daily.goldProduced'], ['cleaning_hrs', 'daily.cleaningHours'],
+    ['prep_hrs', 'daily.prepHours'], ['idle_hrs', 'daily.idleHours'],
+    ['fuel_received_barrels', 'daily.fuelReceived'], ['notes', 'daily.notes'],
+  ],
+  transactions: [
+    ['date', 'tx.date'], ['type', 'tx.type'], ['category', 'tx.category'], ['amount', 'tx.amount'],
+    ['gold_grams_sold', 'tx.gramsSold'], ['fuel_barrels_topped_up', 'tx.barrelsReceived'],
+    ['machine_hrs_topped_up', 'tx.hrsAdded'], ['paid_by', 'tx.paidBy'], ['notes', 'tx.notes'],
+  ],
+  inputs: [
+    'gold_price', 'fuel_price', 'rental_rate', 'royalty_rate', 'landowner_share',
+    'target_cash_reserve', 'efficiency_threshold', 'opening_cash', 'machine_hrs_opening',
+    'fuel_barrels_opening', 'fuel_per_barrel', 'cleaning_fuel_rate', 'prep_fuel_rate',
+  ].map((key) => [key, `hist.f.${key}`]),
+};
+// Already in the entry's title line, so not repeated for added or deleted records.
+const HISTORY_TITLE_FIELDS = { daily_logs: ['date'], transactions: ['date', 'category', 'amount'] };
+// Bookkeeping columns that change on every save and mean nothing to readers.
+const HISTORY_IGNORED_FIELDS = new Set([
+  'id', 'site_id', 'created_at', 'updated_at', 'synced_at', 'created_offline',
+  'logged_by', 'entered_by', 'updated_by', 'week_start',
+]);
+
+const asRecord = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+const fmtHistoryValue = (v) => {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'number') return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(v);
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+};
+
+function HistoryEntry({ entry }) {
+  const { t } = useT();
+  const before = asRecord(entry.old_data);
+  const after = asRecord(entry.new_data);
+  const row = entry.new_data ? after : before;
+  const fields = HISTORY_FIELDS[entry.table_name] || [];
+  const labelOf = (key) => { const f = fields.find(([k]) => k === key); return f ? t(f[1]) : key; };
+  const valueOf = (key, v) => (key === 'type' && (v === 'expense' || v === 'credit') ? t(`tx.${v}`) : fmtHistoryValue(v));
+
+  let lines;
+  if (entry.action === 'update') {
+    const known = fields.map(([k]) => k);
+    const extra = Object.keys({ ...before, ...after }).filter((k) => !known.includes(k) && !HISTORY_IGNORED_FIELDS.has(k));
+    lines = [...known, ...extra]
+      .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+      .map((k) => [k, `${labelOf(k)}: ${valueOf(k, before[k])} → ${valueOf(k, after[k])}`]);
+  } else {
+    const inTitle = HISTORY_TITLE_FIELDS[entry.table_name] || [];
+    lines = fields
+      .filter(([k]) => !inTitle.includes(k) && row[k] !== null && row[k] !== undefined && row[k] !== '' && row[k] !== 0)
+      .map(([k]) => [k, `${labelOf(k)}: ${valueOf(k, row[k])}`]);
+  }
+
+  const action = entry.action === 'insert' ? { key: 'hist.added', cls: 'bg-emerald-50 text-emerald-700' }
+    : entry.action === 'delete' ? { key: 'hist.deleted', cls: 'bg-red-50 text-red-700' }
+    : { key: 'hist.changed', cls: 'bg-amber-50 text-amber-800' };
+
+  let title = entry.table_name;
+  if (entry.table_name === 'daily_logs') title = `${t('hist.dailyLog')} · ${row.date || '—'}`;
+  if (entry.table_name === 'transactions') {
+    title = `${t('hist.transaction')} · ${row.date || '—'} · ${row.category || '—'} · ${fmtETB(Number(row.amount))} ETB`;
+  }
+  if (entry.table_name === 'inputs') title = t('hist.inputs');
+
+  const who = entry.changed_by ? (entry.changed_by_name || t('hist.unknownUser')) : t('hist.system');
+
+  return (
+    <div className="bg-white border border-stone-200 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 ${action.cls}`}>{t(action.key)}</span>
+        <span className="text-[10px] text-stone-500 text-right">{new Date(entry.created_at).toLocaleString()}</span>
+      </div>
+      <div className="text-sm font-medium text-stone-900 mt-1 break-words">{title}</div>
+      <div className="text-xs text-stone-500 mt-0.5">{t('hist.by')} {who}</div>
+      {lines.length > 0 ? (
+        <ul className="mt-2 space-y-0.5 text-xs text-stone-700">
+          {lines.map(([k, text]) => <li key={k} className="break-words">{text}</li>)}
+        </ul>
+      ) : entry.action === 'update' ? (
+        <div className="mt-2 text-xs text-stone-400">{t('hist.noFieldChanges')}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChangeHistory({ site }) {
+  const { t } = useT();
+  const demo = isDemoActive();
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+
+  // `oldest` is the last entry already shown; null loads the newest page.
+  const load = useCallback(async (oldest) => {
+    setLoading(true); setError('');
+    // The supabase wrapper has no rpc(), so call the real client directly.
+    // This is never reached in Demo Mode, so demo data can't reach Supabase.
+    const { data, error: err } = await realSupabase.rpc('site_change_history', {
+      p_site_id: site.id,
+      p_before_time: oldest ? oldest.created_at : null,
+      p_before_id: oldest ? oldest.id : null,
+      p_limit: HISTORY_PAGE_SIZE,
+    });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    const rows = data || [];
+    setEntries((prev) => (oldest ? [...prev, ...rows] : rows));
+    setHasMore(rows.length === HISTORY_PAGE_SIZE);
+  }, [site.id]);
+
+  useEffect(() => { if (!demo) load(null); }, [demo, load]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('hist.title')}</div>
+        <div className="text-sm text-stone-600">{t('hist.subtitle')}</div>
+      </div>
+
+      {demo ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3">{t('hist.demoNote')}</div>
+      ) : (
+        <>
+          {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2">{t('hist.error')} {error}</div>}
+          {!error && !loading && entries.length === 0 && (
+            <div className="bg-white border border-stone-200 px-3 py-8 text-center text-sm text-stone-400">{t('hist.empty')}</div>
+          )}
+          <div className="space-y-2">
+            {entries.map((e) => <HistoryEntry key={e.id} entry={e} />)}
+          </div>
+          {loading && <div className="text-xs text-stone-500 py-2">{t('hist.loading')}</div>}
+          {hasMore && !loading && (
+            <button onClick={() => load(entries[entries.length - 1])}
+              className="w-full bg-white border border-stone-300 py-3 text-xs uppercase tracking-widest text-stone-600 hover:border-amber-700 hover:text-amber-700 transition-colors">
+              {t('hist.showOlder')}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1936,6 +2106,7 @@ export default function App() {
         {page === 'daily' && <DailyLogs site={site} logs={logs} profile={profile} onRefresh={refreshSiteData} />}
         {page === 'transactions' && <Transactions site={site} transactions={transactions} profile={profile} onRefresh={refreshSiteData} />}
         {page === 'weekly' && <WeeklyReport inputs={inputs} logs={logs} transactions={transactions} />}
+        {page === 'history' && <ChangeHistory site={site} />}
         {page === 'inputs' && profile.role === 'super_admin' && <Inputs site={site} inputs={inputs} profile={profile} onRefresh={refreshSiteData} />}
         {page === 'language' && profile.role === 'super_admin' && <TranslationsAdmin profile={profile} />}
       </Shell>
