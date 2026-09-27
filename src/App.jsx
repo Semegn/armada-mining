@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useContext, useCallback, createContext } from 'react';
+import React, { useState, useEffect, useMemo, useContext, useCallback, useRef, createContext } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import logoShield from './assets/logo-shield.png';
 
@@ -177,23 +177,36 @@ class MockQueryBuilder {
     return { data: Array.isArray(payload) ? updatedRows : updatedRows[0], error: null };
   }
 
-  async update(payload) {
-    let items = this._load();
-    let updated = [];
-    items = items.map(item => {
-      const match = this.filters.every(f => f(item));
-      if (match) {
-        const u = { ...item, ...payload };
-        updated.push(u);
-        return u;
-      }
-      return item;
-    });
-    this._save(items);
-    return { data: updated, error: null };
+  // Like supabase-js, update() and delete() run when awaited, after the .eq() filters are added.
+  update(payload) {
+    this.pendingUpdate = payload;
+    return this;
+  }
+
+  delete() {
+    this.pendingDelete = true;
+    return this;
+  }
+
+  _applyMutation() {
+    const items = this._load();
+    const changed = [];
+    const next = [];
+    for (const item of items) {
+      if (!this.filters.every(f => f(item))) { next.push(item); continue; }
+      if (this.pendingDelete) { changed.push(item); continue; }
+      const u = { ...item, ...this.pendingUpdate };
+      changed.push(u);
+      next.push(u);
+    }
+    this._save(next);
+    return { data: changed, error: null };
   }
 
   then(onfulfilled) {
+    if (this.pendingUpdate || this.pendingDelete) {
+      return Promise.resolve(this._applyMutation()).then(onfulfilled);
+    }
     let items = this._load();
     
     if (this.filters.length > 0) {
@@ -377,6 +390,8 @@ const EN_STRINGS = {
   'daily.colDate': 'Date', 'daily.colClean': 'Clean hrs', 'daily.colPrep': 'Prep hrs',
   'daily.colIdle': 'Idle hrs', 'daily.colTotal': 'Total hrs',
   'daily.colGold': 'Gold (g)', 'daily.colFuelIn': 'Fuel In', 'daily.colNotes': 'Notes',
+  'daily.editing': 'Editing log for', 'daily.dateTaken': 'Another log already exists for this date.',
+  'daily.confirmDelete': 'Delete this daily log? The change history keeps a record of it.',
   // Transactions
   'tx.title': 'Statement', 'tx.newTx': '+ New Transaction', 'tx.cancel': 'Cancel',
   'tx.date': 'Date', 'tx.type': 'Type', 'tx.expenseDebit': 'Expense (Debit)', 'tx.creditIncome': 'Credit (Income / Inflow)',
@@ -388,6 +403,10 @@ const EN_STRINGS = {
   'tx.gramsSold': 'Grams Sold', 'tx.goldSale': 'Gold Sale', 'tx.loan': 'Loan',
   'tx.investment': 'Investment', 'tx.otherIncome': 'Other Income',
   'tx.barrelsReceived': 'Barrels Received', 'tx.hrsAdded': 'Machine Hours Added',
+  'tx.editing': 'Editing entry from', 'tx.confirmDelete': 'Delete this statement entry? The change history keeps a record of it.',
+  // Editing
+  'edit.edit': 'Edit', 'edit.saveChanges': 'Save Changes', 'edit.delete': 'Delete',
+  'edit.notSaved': 'Nothing was changed. You may not be allowed to change this entry, or it no longer exists.',
   // Weekly
   'weekly.selectWeek': 'Select Week', 'weekly.noData': 'No log data yet — add daily logs first.',
   'weekly.noSelection': 'Select a highlighted week to view snapshot.', 'weekly.through': 'through',
@@ -1196,6 +1215,67 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const formRef = useRef(null);
+
+  // Super admin can change any log; a site manager only the logs they entered (same rule as the database).
+  const canEdit = (l) => profile.role === 'super_admin' || (profile.role === 'site_manager' && l.logged_by === profile.id);
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditing(null);
+    setError('');
+    setForm({ date: todayISO(), cleaning_hrs: '', prep_hrs: '', idle_hrs: '', gold_g: '', fuel_received_barrels: '', notes: '' });
+  };
+
+  const startEdit = (l) => {
+    setError('');
+    setEditing(l);
+    setForm({
+      date: l.date,
+      cleaning_hrs: String(l.cleaning_hrs ?? ''),
+      prep_hrs: String(l.prep_hrs ?? ''),
+      idle_hrs: String(l.idle_hrs ?? ''),
+      gold_g: String(l.gold_g ?? ''),
+      fuel_received_barrels: String(l.fuel_received_barrels ?? ''),
+      notes: l.notes || '',
+    });
+    setShowForm(true);
+  };
+
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  // An edit changes only this one log and keeps who originally entered it.
+  const saveEdit = async ({ site_id, logged_by, ...changes }) => {
+    if (logs.some((l) => l.id !== editing.id && l.date === changes.date)) {
+      setSaving(false);
+      setError(t('daily.dateTaken'));
+      return;
+    }
+    const { data, error } = await supabase.from('daily_logs')
+      .update({ ...changes, updated_at: new Date().toISOString() })
+      .eq('id', editing.id)
+      .select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeForm();
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`${t('daily.confirmDelete')}\n${editing.date}`)) return;
+    setError('');
+    setSaving(true);
+    const { data, error } = await supabase.from('daily_logs').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeForm();
+    onRefresh();
+  };
 
   const handleSave = async () => {
     setError('');
@@ -1211,6 +1291,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
       fuel_received_barrels: Number(form.fuel_received_barrels) || 0,
       notes: form.notes || null,
     };
+    if (editing) { await saveEdit(payload); return; }
     const { error } = await supabase.from('daily_logs').upsert(payload, { onConflict: 'site_id,date' });
     setSaving(false);
     if (error) { setError(error.message); return; }
@@ -1227,7 +1308,7 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
           <div className="text-sm text-stone-600">{logs.length} {t('daily.entries')}</div>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => (showForm ? closeForm() : setShowForm(true))}
           className="bg-stone-900 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-700 transition-colors"
         >
           {showForm ? t('daily.cancel') : t('daily.newLog')}
@@ -1235,7 +1316,10 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
       </div>
 
       {showForm && (
-        <div className="bg-white border border-stone-200 p-4 mb-4">
+        <div ref={formRef} className="bg-white border border-stone-200 p-4 mb-4">
+          {editing && (
+            <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('daily.editing')} {editing.date}</div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label={t('daily.date')} type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
             <Field label={t('daily.goldProduced')} type="number" value={form.gold_g} onChange={(v) => setForm({ ...form, gold_g: v })} />
@@ -1259,8 +1343,17 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
             disabled={saving}
             className="mt-3 bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400"
           >
-            {saving ? t('daily.saving') : t('daily.saveLog')}
+            {saving ? t('daily.saving') : editing ? t('edit.saveChanges') : t('daily.saveLog')}
           </button>
+          {editing && profile.role === 'super_admin' && (
+            <button
+              onClick={handleDelete}
+              disabled={saving}
+              className="mt-3 ml-3 border border-red-300 text-red-700 px-6 py-2 text-xs uppercase tracking-widest hover:bg-red-50 disabled:opacity-50"
+            >
+              {t('edit.delete')}
+            </button>
+          )}
         </div>
       )}
 
@@ -1285,7 +1378,15 @@ function DailyLogs({ site, logs, profile, onRefresh }) {
             )}
             {logs.map((l) => (
               <tr key={l.id} className="border-t border-stone-100">
-                <td className="px-3 py-2 text-stone-900 font-medium">{l.date}</td>
+                <td className="px-3 py-2 text-stone-900 font-medium whitespace-nowrap">
+                  {l.date}
+                  {canEdit(l) && (
+                    <button onClick={() => startEdit(l)}
+                      className="ml-2 px-2 py-1 border border-stone-300 text-[10px] uppercase tracking-widest text-stone-600 hover:border-amber-700 hover:text-amber-700">
+                      {t('edit.edit')}
+                    </button>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.cleaning_hrs, 1)}</td>
                 <td className="px-3 py-2 text-right">{fmtNum(l.prep_hrs, 1)}</td>
                 <td className="px-3 py-2 text-right text-stone-400">{l.idle_hrs > 0 ? fmtNum(l.idle_hrs, 1) : '—'}</td>
@@ -1329,6 +1430,63 @@ function Transactions({ site, transactions, profile, onRefresh }) {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const formRef = useRef(null);
+  // Only the super admin can change or delete statement entries (same rule as the database).
+  const canEdit = profile.role === 'super_admin';
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditing(null);
+    setError('');
+    setForm(emptyForm);
+  };
+
+  const startEdit = (tx) => {
+    setError('');
+    setEditing(tx);
+    setForm({
+      date: tx.date,
+      amount: String(tx.amount ?? ''),
+      type: tx.type,
+      category: tx.category,
+      paid_by: tx.paid_by || '',
+      notes: tx.notes || '',
+      gold_grams_sold: String(tx.gold_grams_sold ?? ''),
+      fuel_barrels_topped_up: String(tx.fuel_barrels_topped_up ?? ''),
+      machine_hrs_topped_up: String(tx.machine_hrs_topped_up ?? ''),
+    });
+    setShowForm(true);
+  };
+
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  // An edit changes only this one entry and keeps who originally entered it.
+  const saveEdit = async ({ site_id, entered_by, ...changes }) => {
+    const { data, error } = await supabase.from('transactions')
+      .update({ ...changes, updated_at: new Date().toISOString() })
+      .eq('id', editing.id)
+      .select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeForm();
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`${t('tx.confirmDelete')}\n${editing.date} · ${editing.category} · ${fmtETB(editing.amount)} ETB`)) return;
+    setError('');
+    setSaving(true);
+    const { data, error } = await supabase.from('transactions').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeForm();
+    onRefresh();
+  };
 
   const handleTypeChange = (newType) => {
     setForm({ ...form, type: newType, category: newType === 'credit' ? 'Gold Sale' : 'Fuel', gold_grams_sold: '' });
@@ -1354,6 +1512,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
       machine_hrs_topped_up: (form.type === 'expense' && form.category === 'Machine Rental' && form.machine_hrs_topped_up)
         ? Number(form.machine_hrs_topped_up) : null,
     };
+    if (editing) { await saveEdit(payload); return; }
     const { error } = await supabase.from('transactions').insert(payload);
     setSaving(false);
     if (error) { setError(error.message); return; }
@@ -1368,6 +1527,10 @@ function Transactions({ site, transactions, profile, onRefresh }) {
     return { exp, cr };
   }, [transactions]);
 
+  const categoryList = form.type === 'credit' ? CREDIT_CATEGORIES : CATEGORIES;
+  // Keep an older entry's category selectable when editing, even if it is no longer in the list.
+  const categoryOptions = categoryList.includes(form.category) ? categoryList : [...categoryList, form.category];
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -1376,7 +1539,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
           <div className="text-sm text-stone-600">{transactions.length} {t('status.transactions')} · Expense {fmtETB(totals.exp)} · Credit {fmtETB(totals.cr)} ETB</div>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => (showForm ? closeForm() : setShowForm(true))}
           className="bg-stone-900 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-700 transition-colors"
         >
           {showForm ? t('tx.cancel') : t('tx.newTx')}
@@ -1384,7 +1547,10 @@ function Transactions({ site, transactions, profile, onRefresh }) {
       </div>
 
       {showForm && (
-        <div className="bg-white border border-stone-200 p-4 mb-4">
+        <div ref={formRef} className="bg-white border border-stone-200 p-4 mb-4">
+          {editing && (
+            <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('tx.editing')} {editing.date}</div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label={t('tx.date')} type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
             <div>
@@ -1406,7 +1572,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700"
               >
-                {(form.type === 'credit' ? CREDIT_CATEGORIES : CATEGORIES).map((c) => (
+                {categoryOptions.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -1440,8 +1606,17 @@ function Transactions({ site, transactions, profile, onRefresh }) {
             disabled={saving || !form.amount}
             className="mt-3 bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400"
           >
-            {saving ? t('tx.saving') : t('tx.saveTx')}
+            {saving ? t('tx.saving') : editing ? t('edit.saveChanges') : t('tx.saveTx')}
           </button>
+          {editing && canEdit && (
+            <button
+              onClick={handleDelete}
+              disabled={saving}
+              className="mt-3 ml-3 border border-red-300 text-red-700 px-6 py-2 text-xs uppercase tracking-widest hover:bg-red-50 disabled:opacity-50"
+            >
+              {t('edit.delete')}
+            </button>
+          )}
         </div>
       )}
 
@@ -1463,7 +1638,15 @@ function Transactions({ site, transactions, profile, onRefresh }) {
             )}
             {transactions.map((tx) => (
               <tr key={tx.id} className="border-t border-stone-100">
-                <td className="px-3 py-2 text-stone-900 font-medium">{tx.date}</td>
+                <td className="px-3 py-2 text-stone-900 font-medium whitespace-nowrap">
+                  {tx.date}
+                  {canEdit && (
+                    <button onClick={() => startEdit(tx)}
+                      className="ml-2 px-2 py-1 border border-stone-300 text-[10px] uppercase tracking-widest text-stone-600 hover:border-amber-700 hover:text-amber-700">
+                      {t('edit.edit')}
+                    </button>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   {tx.category}
                   {tx.category === 'Gold Sale' && tx.gold_grams_sold > 0 && (
