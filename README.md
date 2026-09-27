@@ -6,7 +6,7 @@ A modern Progressive Web App for multi-site gold mining operations. Built for pa
 
 ## Features
 
-- **Daily Operations Log** — Site team logs hours, gold produced, fuel deliveries, machine hours
+- **Daily Operations Log** — Site team logs hours, gold produced, fuel used, machine hours
 - **Financial Statement** — Every transaction tracked by category
 - **Live Dashboard** — Real-time working capital, production, profitability
 - **Multi-site & Multi-partner** — Designed for multiple mining sites with different partnership structures
@@ -87,14 +87,15 @@ Cost per Gram = Total Costs / Net Saleable Gold
 
 **Working Capital:**
 ```
-Fuel Remaining = opening + received - consumed
+Fuel Remaining = opening + delivered (Barrels Received on Fuel payments) - used (daily logs)
 Machine Hours Remaining = opening + topped_up - used
 Cash on Hand = opening_cash + credits - expenses
 ```
 
 Runway calculations:
 ```
-Daily Fuel Consumption = cleaning_hrs × cleaning_fuel_rate + prep_hrs × prep_fuel_rate
+Daily Fuel Used = barrels entered in the daily log (Fuel Used), or on a day with none:
+                  cleaning_hrs × cleaning_fuel_rate + prep_hrs × prep_fuel_rate
 Fuel Runway (days) = fuel_remaining_liters / avg_daily_consumption
 Machine Runway (days) = machine_hrs_remaining / avg_daily_hours
 ```
