@@ -70,14 +70,29 @@ One-time setup:
    settings and turn **off** "Enforce JWT verification"; the function checks who is
    calling itself. With the Supabase CLI instead:
    `supabase functions deploy telegram-reports --no-verify-jwt`.
-4. **Schedule it.** Run `docs/migrations/003_telegram_reports.sql` (see "Database changes").
+4. **Schedule it.** Run `docs/migrations/003_telegram_reports.sql`, then
+   `docs/migrations/004_telegram_history.sql` (see "Database changes").
 5. **Create the channels.** For each site, create a **private** Telegram channel and
    add the bot as an administrator that can post messages.
 6. **Connect them.** In the app, sign in as super admin, open the site, go to Inputs →
    Telegram Reports → Find channels → Connect, then press Send test report.
 
+7. **Post the history (optional).** Press Send past reports. It posts a report for every
+   earlier day with entries, plus each finished week's summary, oldest first and without
+   notifications. Keep the page open until it says it's done. It never posts a report
+   twice, so it's safe to press again if it stops.
+
 If a channel doesn't appear under Find channels, post any message in it and try again.
 Telegram only shows the bot the last 24 hours of activity.
+
+Corrections: when a daily log or statement entry changes for a day whose report is
+already in the channel, that report (and its week's summary) is updated in place with an
+"Edited … by …" line at the bottom. A short correction notice is also posted as a reply,
+because Telegram doesn't notify readers of edits. Later reports aren't rewritten; the next
+daily report shows the corrected totals.
+
+Whenever `supabase/functions/telegram-reports/index.ts` changes, paste the new version into
+the function in Supabase and deploy again.
 
 Before deploying a changed version of the bot, run `node scripts/check-telegram-calc.mjs`.
 The bot carries copies of the app's calculations so the reports match the app, and this

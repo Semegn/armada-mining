@@ -439,7 +439,11 @@ const EN_STRINGS = {
   'hist.f.cleaning_fuel_rate': 'Cleaning Fuel Rate', 'hist.f.prep_fuel_rate': 'Prep Fuel Rate',
   // Telegram reports
   'tg.title': 'Telegram Reports',
-  'tg.subtitle': "Every day at 8 pm (Ethiopia time) this site's report is posted to its Telegram channel. A weekly summary follows on Sundays at 8 pm.",
+  'tg.subtitle': "Every day at 8 pm (Ethiopia time) this site's report is posted to its Telegram channel, and a weekly summary follows on Sundays at 8 pm. If a day that was already posted is corrected later, its report is updated and a correction notice is posted.",
+  'tg.sendPast': 'Send past reports', 'tg.posting': 'Posting…',
+  'tg.confirmPast': 'Post all past reports to the channel? It takes a few seconds per report. Keep this page open until it finishes.',
+  'tg.pastProgress': 'Posting past reports…', 'tg.pastDone': 'All past reports are posted.',
+  'tg.pastStuck': 'Posting stopped. Press Send past reports again to continue.',
   'tg.connected': 'Posting to:', 'tg.notConnected': 'No channel connected yet.',
   'tg.find': 'Find channels', 'tg.finding': 'Looking…', 'tg.connect': 'Connect',
   'tg.noneFound': 'No channels found. Make sure the bot is an admin of the channel, post any message in the channel, then press Find channels again.',
@@ -2045,6 +2049,20 @@ function TelegramSettings({ site, profile }) {
     setNotice({ ok: true, text: t('tg.testSent') });
   });
 
+  // The bot posts past reports in batches; each call says how many are left.
+  const sendPast = () => run('past', async () => {
+    if (!window.confirm(t('tg.confirmPast'))) return;
+    let total = 0;
+    for (;;) {
+      const res = await callBot({ action: 'backfill', site_id: site.id });
+      total += res.posted;
+      if (res.done) break;
+      if (res.posted === 0) throw new Error(t('tg.pastStuck'));
+      setNotice({ ok: true, text: `${t('tg.pastProgress')} ${total} / ${total + res.remaining}` });
+    }
+    setNotice({ ok: true, text: `${t('tg.pastDone')} (${total})` });
+  });
+
   const disconnect = () => run('remove', async () => {
     if (!window.confirm(t('tg.confirmDisconnect'))) return;
     const { error } = await supabase.from('site_telegram').delete().eq('site_id', site.id);
@@ -2075,6 +2093,11 @@ function TelegramSettings({ site, profile }) {
               {setting && (
                 <button onClick={sendTest} disabled={!!busy} className={`${btn} bg-amber-700 text-white border-amber-700 hover:bg-amber-800`}>
                   {busy === 'test' ? t('tg.sending') : t('tg.sendTest')}
+                </button>
+              )}
+              {setting && (
+                <button onClick={sendPast} disabled={!!busy} className={`${btn} border-stone-300 text-stone-700 hover:border-amber-700 hover:text-amber-700`}>
+                  {busy === 'past' ? t('tg.posting') : t('tg.sendPast')}
                 </button>
               )}
               {setting && (
