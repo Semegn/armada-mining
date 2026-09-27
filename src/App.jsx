@@ -72,11 +72,11 @@ class MockQueryBuilder {
       }];
     } else if (this.table === 'daily_logs') {
       initial = [
-        { id: 'log-1', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: todayISO(), cleaning_hrs: 6, prep_hrs: 3, idle_hrs: 1, gold_g: 38.5, fuel_received_barrels: 0, notes: "Normal shift. Good gold concentration in the north wash plant." },
-        { id: 'log-2', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), cleaning_hrs: 7, prep_hrs: 2, idle_hrs: 0, gold_g: 42.1, fuel_received_barrels: 5, notes: "Received 5 barrels of fuel. Excavator routine service done." },
-        { id: 'log-3', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), cleaning_hrs: 5, prep_hrs: 4, idle_hrs: 2, gold_g: 29.8, fuel_received_barrels: 0, notes: "Minor clay blockage in screen box. Idle time due to belt adjustment." },
-        { id: 'log-4', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 259200000).toISOString().slice(0, 10), cleaning_hrs: 8, prep_hrs: 1, idle_hrs: 0, gold_g: 45.0, fuel_received_barrels: 0, notes: "Excellent recovery day. Crew working very efficiently." },
-        { id: 'log-5', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), cleaning_hrs: 6, prep_hrs: 2, idle_hrs: 1, gold_g: 34.2, fuel_received_barrels: 10, notes: "Bulk fuel delivery of 10 barrels. Rain in the evening but did not affect cleaning." }
+        { id: 'log-1', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: todayISO(), cleaning_hrs: 6, prep_hrs: 3, idle_hrs: 1, gold_g: 38.5, fuel_received_barrels: 2, notes: "Normal shift. Good gold concentration in the north wash plant." },
+        { id: 'log-2', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), cleaning_hrs: 7, prep_hrs: 2, idle_hrs: 0, gold_g: 42.1, fuel_received_barrels: 2, notes: "Excavator routine service done." },
+        { id: 'log-3', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), cleaning_hrs: 5, prep_hrs: 4, idle_hrs: 2, gold_g: 29.8, fuel_received_barrels: 1.5, notes: "Minor clay blockage in screen box. Idle time due to belt adjustment." },
+        { id: 'log-4', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 259200000).toISOString().slice(0, 10), cleaning_hrs: 8, prep_hrs: 1, idle_hrs: 0, gold_g: 45.0, fuel_received_barrels: 2, notes: "Excellent recovery day. Crew working very efficiently." },
+        { id: 'log-5', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), cleaning_hrs: 6, prep_hrs: 2, idle_hrs: 1, gold_g: 34.2, fuel_received_barrels: 2, notes: "Rain in the evening but did not affect cleaning." }
       ];
     } else if (this.table === 'transactions') {
       initial = [
@@ -385,11 +385,11 @@ const EN_STRINGS = {
   'daily.title': 'Daily Logs', 'daily.entries': 'entries', 'daily.newLog': '+ New Log', 'daily.cancel': 'Cancel',
   'daily.date': 'Date', 'daily.goldProduced': 'Gold Produced (g)', 'daily.cleaningHours': 'Cleaning Hours',
   'daily.prepHours': 'Prep Hours', 'daily.idleHours': 'Idle Hours (charged)',
-  'daily.fuelReceived': 'Fuel Received (barrels)', 'daily.notes': 'Notes',
+  'daily.fuelReceived': 'Fuel Used (barrels)', 'daily.notes': 'Notes',
   'daily.saveLog': 'Save Log', 'daily.saving': 'Saving…', 'daily.noLogs': 'No logs yet',
   'daily.colDate': 'Date', 'daily.colClean': 'Clean hrs', 'daily.colPrep': 'Prep hrs',
   'daily.colIdle': 'Idle hrs', 'daily.colTotal': 'Total hrs',
-  'daily.colGold': 'Gold (g)', 'daily.colFuelIn': 'Fuel In', 'daily.colNotes': 'Notes',
+  'daily.colGold': 'Gold (g)', 'daily.colFuelIn': 'Fuel Used', 'daily.colNotes': 'Notes',
   'daily.editing': 'Editing log for', 'daily.dateTaken': 'Another log already exists for this date.',
   'daily.confirmDelete': 'Delete this daily log? The change history keeps a record of it.',
   // Transactions
@@ -896,21 +896,29 @@ function WeekCalendar({ logs, transactions, selectedWeek, onSelectWeek }) {
   );
 }
 
+// Fuel used on one day, in litres: the barrels entered in the daily log, or, on a day with
+// none entered, the estimate from working hours (idle machines don't burn working fuel).
+const dailyFuelUsedL = (log, inputs) => {
+  const barrels = Number(log.fuel_received_barrels) || 0;
+  return barrels > 0
+    ? barrels * Number(inputs.fuel_per_barrel)
+    : (Number(log.cleaning_hrs) || 0) * Number(inputs.cleaning_fuel_rate) + (Number(log.prep_hrs) || 0) * Number(inputs.prep_fuel_rate);
+};
+
 function weeklySnap(inputs, logs, transactions, selectedWeek) {
   if (!inputs || !selectedWeek) return null;
   const weekEnd = addDays(selectedWeek, 6);
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  const fuelFromDailyLogs = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
-  const fuelFromTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
-  const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
+  // Deliveries come from Fuel payments; the daily log's barrels are fuel used (see dailyFuelUsedL)
+  const fuelReceivedBarrels = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
   const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
   const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-  const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
+  const fuelConsumedL = snapLogs.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0);
   const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
   const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
   const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
@@ -1222,16 +1230,15 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const latestLog = logs[0];
 
     // Cumulative fuel & machine hours
-    const fuelFromDailyLogs = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
-    const fuelFromTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
-    const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
+    // Deliveries come from Fuel payments; the daily log's barrels are fuel used (see dailyFuelUsedL)
+    const fuelReceivedBarrels = transactions.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
     const cleaningHrs = logs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
     const prepHrs = logs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
     const idleHrs = logs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
     const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-    // Fuel consumed (liters) using per-hour rates — idle machines don't run at working fuel rate
-    const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
+    // Fuel used (liters): the barrels entered each day, or the hours estimate on days with none
+    const fuelConsumedL = logs.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0);
     const fuelOpeningL = Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel);
     const fuelReceivedL = fuelReceivedBarrels * Number(inputs.fuel_per_barrel);
     const fuelRemainingL = fuelOpeningL + fuelReceivedL - fuelConsumedL;
@@ -1273,7 +1280,7 @@ function Dashboard({ site, inputs, logs, transactions }) {
     // Runways — use last 7 days of data
     const last7 = logs.slice(0, 7);
     const last7Hrs = last7.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0) + (Number(l.prep_hrs) || 0), 0);
-    const last7Fuel = last7.length > 0 ? last7.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0) * Number(inputs.cleaning_fuel_rate) + (Number(l.prep_hrs) || 0) * Number(inputs.prep_fuel_rate), 0) / Math.min(last7.length, 7) : 0;
+    const last7Fuel = last7.length > 0 ? last7.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0) / Math.min(last7.length, 7) : 0;
     const avgDailyHrs = last7.length > 0 ? last7Hrs / Math.min(last7.length, 7) : 0;
     const fuelRunwayDays = last7Fuel > 0 ? fuelRemainingL / last7Fuel : null;
     const machineRunwayDays = avgDailyHrs > 0 ? machineHrsRemaining / avgDailyHrs : null;
