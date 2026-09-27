@@ -437,6 +437,17 @@ const EN_STRINGS = {
   'hist.f.opening_cash': 'Opening Cash', 'hist.f.machine_hrs_opening': 'Opening Machine Hours',
   'hist.f.fuel_barrels_opening': 'Opening Fuel Stock', 'hist.f.fuel_per_barrel': 'Litres per Barrel',
   'hist.f.cleaning_fuel_rate': 'Cleaning Fuel Rate', 'hist.f.prep_fuel_rate': 'Prep Fuel Rate',
+  // Telegram reports
+  'tg.title': 'Telegram Reports',
+  'tg.subtitle': "Every day at 8 pm (Ethiopia time) this site's report is posted to its Telegram channel. A weekly summary follows on Sundays at 8 pm.",
+  'tg.connected': 'Posting to:', 'tg.notConnected': 'No channel connected yet.',
+  'tg.find': 'Find channels', 'tg.finding': 'Looking…', 'tg.connect': 'Connect',
+  'tg.noneFound': 'No channels found. Make sure the bot is an admin of the channel, post any message in the channel, then press Find channels again.',
+  'tg.sendTest': 'Send test report', 'tg.sending': 'Sending…', 'tg.testSent': 'Test report sent. Check the channel.',
+  'tg.disconnect': 'Disconnect', 'tg.confirmDisconnect': 'Stop posting reports for this site?',
+  'tg.saved': 'Channel connected.', 'tg.removed': 'Channel disconnected. No more reports will be posted for this site.',
+  'tg.help': 'Before connecting, add the bot to a private channel as an admin that can post messages. Keep the channel private: reports include cash and gold figures.',
+  'tg.demoNote': 'Telegram reports are not available in Demo Mode.',
 };
 
 const SUPPORTED_LOCALES = [
@@ -1969,6 +1980,135 @@ function Inputs({ site, inputs, profile, onRefresh }) {
       >
         {saving ? t('inputs.saving') : t('inputs.saveAll')}
       </button>
+
+      <TelegramSettings site={site} profile={profile} />
+    </div>
+  );
+}
+
+// ============================================================
+// TELEGRAM REPORTS (super admin, inside Inputs)
+// ============================================================
+function TelegramSettings({ site, profile }) {
+  const { t } = useT();
+  const demo = isDemoActive();
+  const [setting, setSetting] = useState(null);
+  const [channels, setChannels] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [notice, setNotice] = useState(null);
+
+  useEffect(() => {
+    if (demo) return;
+    supabase.from('site_telegram').select('*').eq('site_id', site.id).maybeSingle()
+      .then(({ data }) => setSetting(data || null));
+  }, [demo, site.id]);
+
+  // The supabase wrapper has no functions.invoke(), so call the real client directly.
+  // This is never reached in Demo Mode, so demo data can't reach Supabase or Telegram.
+  const callBot = async (body) => {
+    const { data, error } = await realSupabase.functions.invoke('telegram-reports', { body });
+    if (!error) return data;
+    let message = error.message;
+    try { message = (await error.context.json()).error || message; } catch (_) {}
+    throw new Error(message);
+  };
+
+  const run = async (name, action) => {
+    setBusy(name);
+    setNotice(null);
+    try { await action(); } catch (e) { setNotice({ ok: false, text: e.message }); }
+    setBusy('');
+  };
+
+  const findChannels = () => run('find', async () => {
+    const data = await callBot({ action: 'list_channels' });
+    setChannels(data.channels || []);
+  });
+
+  const connect = (channel) => run('save', async () => {
+    const { data, error } = await supabase.from('site_telegram').upsert({
+      site_id: site.id,
+      chat_id: channel.id,
+      chat_title: channel.title,
+      enabled: true,
+      updated_at: new Date().toISOString(),
+      updated_by: profile.id,
+    }, { onConflict: 'site_id' }).select().maybeSingle();
+    if (error) throw new Error(error.message);
+    setSetting(data);
+    setChannels(null);
+    setNotice({ ok: true, text: t('tg.saved') });
+  });
+
+  const sendTest = () => run('test', async () => {
+    await callBot({ action: 'send_test', site_id: site.id });
+    setNotice({ ok: true, text: t('tg.testSent') });
+  });
+
+  const disconnect = () => run('remove', async () => {
+    if (!window.confirm(t('tg.confirmDisconnect'))) return;
+    const { error } = await supabase.from('site_telegram').delete().eq('site_id', site.id);
+    if (error) throw new Error(error.message);
+    setSetting(null);
+    setNotice({ ok: true, text: t('tg.removed') });
+  });
+
+  const btn = 'px-4 py-2 text-xs uppercase tracking-widest border transition-colors disabled:opacity-50';
+  return (
+    <div className="bg-white border border-stone-200">
+      <div className="bg-stone-100 px-4 py-2 text-[10px] uppercase tracking-widest text-stone-600 font-semibold">{t('tg.title')}</div>
+      <div className="p-4 space-y-3 text-sm">
+        <div className="text-stone-600">{t('tg.subtitle')}</div>
+        {demo ? (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">{t('tg.demoNote')}</div>
+        ) : (
+          <>
+            <div className="text-stone-900">
+              {setting
+                ? <>{t('tg.connected')} <span className="font-semibold break-words">{setting.chat_title || setting.chat_id}</span></>
+                : t('tg.notConnected')}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={findChannels} disabled={!!busy} className={`${btn} bg-stone-900 text-white border-stone-900 hover:bg-amber-700`}>
+                {busy === 'find' ? t('tg.finding') : t('tg.find')}
+              </button>
+              {setting && (
+                <button onClick={sendTest} disabled={!!busy} className={`${btn} bg-amber-700 text-white border-amber-700 hover:bg-amber-800`}>
+                  {busy === 'test' ? t('tg.sending') : t('tg.sendTest')}
+                </button>
+              )}
+              {setting && (
+                <button onClick={disconnect} disabled={!!busy} className={`${btn} border-red-300 text-red-700 hover:bg-red-50`}>
+                  {t('tg.disconnect')}
+                </button>
+              )}
+            </div>
+            {channels && (channels.length === 0 ? (
+              <div className="text-xs text-stone-500">{t('tg.noneFound')}</div>
+            ) : (
+              <div className="space-y-2">
+                {channels.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between gap-3 border border-stone-200 px-3 py-2">
+                    <div className="min-w-0 break-words">
+                      {c.title} <span className="text-[10px] uppercase tracking-widest text-stone-400">{c.type}</span>
+                    </div>
+                    <button onClick={() => connect(c)} disabled={!!busy}
+                      className={`${btn} flex-shrink-0 border-stone-300 text-stone-700 hover:border-amber-700 hover:text-amber-700`}>
+                      {t('tg.connect')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {notice && (
+              <div className={`text-xs px-3 py-2 border ${notice.ok ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-red-700 bg-red-50 border-red-200'}`}>
+                {notice.text}
+              </div>
+            )}
+            <div className="text-xs text-stone-500">{t('tg.help')}</div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

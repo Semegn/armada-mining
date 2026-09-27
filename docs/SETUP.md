@@ -51,6 +51,38 @@ Changes to the live database are kept as numbered SQL files in `docs/migrations/
 3. Never edit a file that has already been run. Add a new numbered file instead.
 4. Each file ends with commented-out UNDO steps in case a change has to be reversed.
 
+## Telegram reports
+
+Each site can post a daily report (8 pm Ethiopia time) and a weekly summary
+(Sundays, 8 pm) to its own private Telegram channel. The bot runs as the Supabase
+Edge Function `telegram-reports` (`supabase/functions/telegram-reports/index.ts`).
+Its key lives only in Supabase secrets, never in the code.
+
+One-time setup:
+
+1. **Create the bot.** In Telegram, open @BotFather, send `/newbot`, choose a name,
+   and copy the token it gives you.
+2. **Store the token.** Supabase → Edge Functions → Secrets → add a secret named
+   `TELEGRAM_BOT_TOKEN` with the token as its value.
+3. **Deploy the bot.** Supabase → Edge Functions → Deploy a new function → Via Editor.
+   Name it `telegram-reports`, replace the example code with the contents of
+   `supabase/functions/telegram-reports/index.ts`, and deploy. Then open the function's
+   settings and turn **off** "Enforce JWT verification"; the function checks who is
+   calling itself. With the Supabase CLI instead:
+   `supabase functions deploy telegram-reports --no-verify-jwt`.
+4. **Schedule it.** Run `docs/migrations/003_telegram_reports.sql` (see "Database changes").
+5. **Create the channels.** For each site, create a **private** Telegram channel and
+   add the bot as an administrator that can post messages.
+6. **Connect them.** In the app, sign in as super admin, open the site, go to Inputs →
+   Telegram Reports → Find channels → Connect, then press Send test report.
+
+If a channel doesn't appear under Find channels, post any message in it and try again.
+Telegram only shows the bot the last 24 hours of activity.
+
+Before deploying a changed version of the bot, run `node scripts/check-telegram-calc.mjs`.
+The bot carries copies of the app's calculations so the reports match the app, and this
+check fails if the copies no longer match `src/App.jsx`.
+
 ## Deployment
 
 ### Netlify
