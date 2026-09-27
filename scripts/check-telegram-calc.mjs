@@ -12,7 +12,7 @@ const grab = (src, name) =>
   src.match(new RegExp(`^(?:const ${name} = |function ${name}\\()[\\s\\S]*?^\\};?$`, 'm'))?.[0];
 
 let ok = true;
-for (const name of ['weekStart', 'addDays', 'fmtETB', 'fmtNum', 'weeklySnap']) {
+for (const name of ['weekStart', 'addDays', 'fmtETB', 'fmtNum', 'dailyFuelUsedL', 'weeklySnap']) {
   const inApp = grab(app, name);
   const inBot = grab(bot, name);
   if (inApp && inApp === inBot) {

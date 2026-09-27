@@ -53,21 +53,27 @@ const fmtNum = (n, d = 1) => {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
 };
 
+const dailyFuelUsedL = (log, inputs) => {
+  const barrels = Number(log.fuel_received_barrels) || 0;
+  return barrels > 0
+    ? barrels * Number(inputs.fuel_per_barrel)
+    : (Number(log.cleaning_hrs) || 0) * Number(inputs.cleaning_fuel_rate) + (Number(log.prep_hrs) || 0) * Number(inputs.prep_fuel_rate);
+};
+
 function weeklySnap(inputs, logs, transactions, selectedWeek) {
   if (!inputs || !selectedWeek) return null;
   const weekEnd = addDays(selectedWeek, 6);
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  const fuelFromDailyLogs = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
-  const fuelFromTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
-  const fuelReceivedBarrels = fuelFromDailyLogs + fuelFromTxs;
+  // Deliveries come from Fuel payments; the daily log's barrels are fuel used (see dailyFuelUsedL)
+  const fuelReceivedBarrels = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
   const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
   const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-  const fuelConsumedL = cleaningHrs * Number(inputs.cleaning_fuel_rate) + prepHrs * Number(inputs.prep_fuel_rate);
+  const fuelConsumedL = snapLogs.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0);
   const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
   const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
   const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
@@ -192,7 +198,7 @@ function dailyBlocks(data, day) {
       row('Clean hours', plain(log.cleaning_hrs), 'hrs'),
       row('Prep hours', plain(log.prep_hrs), 'hrs'),
       row('Idle hours', plain(log.idle_hrs), 'hrs'),
-      row('Fuel received', plain(log.fuel_received_barrels), 'bbl'),
+      row('Fuel used', plain(log.fuel_received_barrels), 'bbl'),
     ]), log.notes));
   } else {
     blocks.push('<b>DAILY LOG</b>\n⚠ No daily log entered for this day.');
@@ -264,7 +270,7 @@ const pack = (blocks) => {
 const FIELD_LABELS = {
   daily_logs: {
     date: ['Date', ''], gold_g: ['Gold produced', 'g'], cleaning_hrs: ['Clean hours', 'hrs'], prep_hrs: ['Prep hours', 'hrs'],
-    idle_hrs: ['Idle hours', 'hrs'], fuel_received_barrels: ['Fuel received', 'bbl'], notes: ['Notes', ''],
+    idle_hrs: ['Idle hours', 'hrs'], fuel_received_barrels: ['Fuel used', 'bbl'], notes: ['Notes', ''],
   },
   transactions: {
     date: ['Date', ''], type: ['Type', ''], category: ['Category', ''], amount: ['Amount', 'ETB'],
@@ -280,7 +286,7 @@ const fieldValue = (key, v) =>
 const recordSummary = (tableName, r) =>
   (tableName === 'transactions'
     ? `${r.type === 'expense' ? '−' : '+'}${fmtETB(r.amount)} ETB ${r.category}${r.notes ? ` · ${r.notes}` : ''}`
-    : `gold ${plain(r.gold_g)} g · hours ${plain(r.cleaning_hrs)}/${plain(r.prep_hrs)}/${plain(r.idle_hrs)} · fuel ${plain(r.fuel_received_barrels)} bbl${r.notes ? ` · ${r.notes}` : ''}`);
+    : `gold ${plain(r.gold_g)} g · hours ${plain(r.cleaning_hrs)}/${plain(r.prep_hrs)}/${plain(r.idle_hrs)} · fuel used ${plain(r.fuel_received_barrels)} bbl${r.notes ? ` · ${r.notes}` : ''}`);
 
 function describeChange(tableName, action, oldRow, newRow) {
   const what = tableName === 'transactions' ? 'Statement' : 'Daily log';
