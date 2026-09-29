@@ -1,11 +1,13 @@
 // @ts-nocheck
-// telegram-reports: posts each site's daily report (20:00 Ethiopia time) and weekly
-// summary (Sundays 20:05) to the Telegram channel connected to that site, can post
-// the past reports, and updates a posted report when its day's entries change.
-// Setup and deployment: docs/SETUP.md. Database: docs/migrations/003 and 004.
+// telegram-reports: posts each site's daily report once its daily log is in (30 minutes
+// after it's saved, or at 9 am the next morning at the latest) and the weekly summary
+// (Sundays 20:05) to the Telegram channel connected to that site, can post the past
+// reports, and updates a posted report when its day's entries change.
+// Setup and deployment: docs/SETUP.md. Database: docs/migrations/003, 004 and 005.
 //
 // Actions (POST, JSON body):
-//   { action: 'run', kind: 'daily' | 'weekly' }  pg_cron; needs the x-cron-secret header
+//   { action: 'run', kind }                       pg_cron; needs the x-cron-secret header.
+//                                                 kind: 'due' | 'morning' | 'weekly' ('daily' = old 8 pm run)
 //   { action: 'record_changed', audit_id }        database trigger; needs the x-cron-secret header
 //   { action: 'list_channels' }                   super admin: channels the bot was added to
 //   { action: 'send_test', site_id }              super admin: posts today's report now (not archived)
@@ -25,9 +27,11 @@ const MESSAGE_LIMIT = 4000;         // Telegram allows 4,096 characters per mess
 const LIVE_GAP_MS = 1100;           // at most one post per second in a channel
 const BACKFILL_GAP_MS = 3200;       // Telegram allows about 20 posts a minute in one channel
 const BACKFILL_BUDGET_MS = 90000;   // stop a batch well inside the Edge Function time limit
+const SETTLE_MINUTES = 30;          // post a day's report this long after its daily log is saved
+const AUTO_POST_DAYS = 3;           // only logs from the last few days are posted automatically
 // The app compares this with its TELEGRAM_BOT_VERSION to warn when this bot needs redeploying.
 // scripts/check-telegram-calc.mjs says what it must be after any change to this file.
-const BOT_VERSION = '9d359915bf';
+const BOT_VERSION = 'eee2a2a9ee';
 
 // ---- Copied verbatim from src/App.jsx so the reports match the app exactly. ----
 // ---- Do not edit here. After changing them in App.jsx, copy them again and run ----
@@ -478,20 +482,38 @@ async function backfill(siteId) {
   return { posted: count, remaining: todo.length - count, done: count === todo.length };
 }
 
+// The days whose daily report a scheduled run should post for one site:
+//   due      every 10 minutes: days whose daily log was saved at least SETTLE_MINUTES ago
+//   morning  9 am: yesterday, even without a log (the report then says the log is missing)
+//   daily    the old fixed 8 pm run (before migration 005): today
+async function daysToPost(kind, siteId, today) {
+  if (kind === 'morning') return [addDays(today, -1)];
+  if (kind === 'daily') return [today];
+  const settledBefore = new Date(Date.now() - SETTLE_MINUTES * 60000).toISOString();
+  const { data, error } = await db.from('daily_logs').select('date').eq('site_id', siteId)
+    .gte('date', addDays(today, -AUTO_POST_DAYS)).lte('date', today).lte('created_at', settledBefore);
+  if (error) throw new Error(`daily_logs: ${error.message}`);
+  return [...new Set(data.map((l) => l.date))].sort();
+}
+
 async function runScheduled(kind) {
   const day = todayInEthiopia();
-  const reportDate = kind === 'weekly' ? weekStart(day) : day;
   const { data: channels, error } = await db.from('site_telegram').select('site_id, chat_id').eq('enabled', true);
   if (error) throw new Error(error.message);
   const results = [];
   for (const c of channels) {
     try {
       const posted = await postedReports(c.site_id, c.chat_id);
-      if (posted.has(`${kind}|${reportDate}`)) { results.push({ site_id: c.site_id, ok: true, skipped: 'already posted' }); continue; }
+      const todo = kind === 'weekly'
+        ? [weekStart(day)].filter((monday) => !posted.has(`weekly|${monday}`))
+        : (await daysToPost(kind, c.site_id, day)).filter((date) => !posted.has(`daily|${date}`));
+      if (todo.length === 0) { results.push({ site_id: c.site_id, ok: true, skipped: 'nothing new' }); continue; }
       const data = await loadSite(c.site_id);
-      const blocks = kind === 'weekly' ? weeklyBlocks(data, reportDate) : dailyBlocks(data, day);
-      await publish(c.site_id, c.chat_id, kind, reportDate, blocks);
-      results.push({ site_id: c.site_id, ok: true });
+      for (const date of todo) {
+        if (kind === 'weekly') await publish(c.site_id, c.chat_id, 'weekly', date, weeklyBlocks(data, date));
+        else await publish(c.site_id, c.chat_id, 'daily', date, dailyBlocks(data, date));
+      }
+      results.push({ site_id: c.site_id, ok: true, posted: todo });
     } catch (e) {
       console.error(`telegram-reports ${kind} ${c.site_id}: ${safe(e)}`);
       results.push({ site_id: c.site_id, ok: false, error: safe(e) });
@@ -548,7 +570,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     if (body.action === 'run' || body.action === 'record_changed') {
       if (!(await isScheduledCall(req))) return reply({ error: 'Not allowed.' }, 401);
-      if (body.action === 'run') return reply(await runScheduled(body.kind === 'weekly' ? 'weekly' : 'daily'));
+      if (body.action === 'run') return reply(await runScheduled(['weekly', 'due', 'morning'].includes(body.kind) ? body.kind : 'daily'));
       return reply(await recordChanged(body.audit_id));
     }
     if (!(await isSuperAdmin(req))) return reply({ error: 'Only the super admin can do this.' }, 403);
