@@ -25,6 +25,9 @@ const MESSAGE_LIMIT = 4000;         // Telegram allows 4,096 characters per mess
 const LIVE_GAP_MS = 1100;           // at most one post per second in a channel
 const BACKFILL_GAP_MS = 3200;       // Telegram allows about 20 posts a minute in one channel
 const BACKFILL_BUDGET_MS = 90000;   // stop a batch well inside the Edge Function time limit
+// The app compares this with its TELEGRAM_BOT_VERSION to warn when this bot needs redeploying.
+// scripts/check-telegram-calc.mjs says what it must be after any change to this file.
+const BOT_VERSION = '9d359915bf';
 
 // ---- Copied verbatim from src/App.jsx so the reports match the app exactly. ----
 // ---- Do not edit here. After changing them in App.jsx, copy them again and run ----
@@ -53,11 +56,9 @@ const fmtNum = (n, d = 1) => {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
 };
 
-const dailyFuelUsedL = (log, inputs) => {
-  const barrels = Number(log.fuel_received_barrels) || 0;
-  return barrels > 0
-    ? barrels * Number(inputs.fuel_per_barrel)
-    : (Number(log.cleaning_hrs) || 0) * Number(inputs.cleaning_fuel_rate) + (Number(log.prep_hrs) || 0) * Number(inputs.prep_fuel_rate);
+const fmtBarrels = (n) => {
+  const tenths = Math.round(Number(n) * 10) / 10;
+  return fmtNum(n, Number.isInteger(tenths) ? 0 : 1);
 };
 
 function weeklySnap(inputs, logs, transactions, selectedWeek) {
@@ -66,15 +67,15 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  // Deliveries come from Fuel payments; the daily log's barrels are fuel used (see dailyFuelUsedL)
+  // Fuel is counted in barrels: in = Barrels Received on Fuel purchases, out = Fuel Used in daily logs
   const fuelReceivedBarrels = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
   const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
   const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-  const fuelConsumedL = snapLogs.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0);
-  const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
+  const fuelUsedBarrels = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelRemainingBarrels = Number(inputs.fuel_barrels_opening) + fuelReceivedBarrels - fuelUsedBarrels;
   const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
   const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
 
@@ -208,7 +209,7 @@ function dailyBlocks(data, day) {
   blocks.push(table('WORKING CAPITAL · end of day', [
     row('Cash on hand', fmtETB(snap.cashOnHand), 'ETB', snap.cashOnHand < Number(inputs.target_cash_reserve)),
     row('Gold on hand', fmtNum(snap.goldOnHand, 1), 'g'),
-    row('Fuel remaining', fmtNum(snap.fuelRemainingBarrels, 1), 'bbl', snap.fuelRemainingBarrels < 7),
+    row('Fuel remaining', fmtBarrels(snap.fuelRemainingBarrels), 'bbl', snap.fuelRemainingBarrels < 7),
     row('Machine hours', fmtNum(snap.machineHrsRemaining, 0), 'hrs', snap.machineHrsRemaining < 100),
   ]));
   blocks.push(table('PRODUCTION · to date', [
@@ -230,7 +231,7 @@ function weeklyBlocks({ site, inputs, logs, txs }, monday) {
       row('Cash on hand', fmtETB(snap.cashOnHand), 'ETB', snap.cashOnHand < Number(inputs.target_cash_reserve)),
       row('Gold on hand', fmtNum(snap.goldOnHand, 1), 'g'),
       row('Gold sold', fmtNum(snap.goldSold, 1), 'g'),
-      row('Fuel remaining', fmtNum(snap.fuelRemainingBarrels, 1), 'bbl', snap.fuelRemainingBarrels < 7),
+      row('Fuel remaining', fmtBarrels(snap.fuelRemainingBarrels), 'bbl', snap.fuelRemainingBarrels < 7),
       row('Machine hours', fmtNum(snap.machineHrsRemaining, 0), 'hrs', snap.machineHrsRemaining < 100),
     ]),
     table('PRODUCTION · cumulative to week end', [
@@ -551,6 +552,7 @@ Deno.serve(async (req) => {
       return reply(await recordChanged(body.audit_id));
     }
     if (!(await isSuperAdmin(req))) return reply({ error: 'Only the super admin can do this.' }, 403);
+    if (body.action === 'version') return reply({ version: BOT_VERSION });
     if (body.action === 'list_channels') return reply({ channels: await listChannels() });
     if (body.action === 'send_test') return reply(await sendTest(body.site_id));
     if (body.action === 'backfill') return reply(await backfill(body.site_id));
