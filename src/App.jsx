@@ -445,7 +445,7 @@ const EN_STRINGS = {
   'hist.f.cleaning_fuel_rate': 'Cleaning Fuel Rate', 'hist.f.prep_fuel_rate': 'Prep Fuel Rate',
   // Telegram reports
   'tg.title': 'Telegram Reports',
-  'tg.subtitle': "Every day at 8 pm (Ethiopia time) this site's report is posted to its Telegram channel, and a weekly summary follows on Sundays at 8 pm. If a day that was already posted is corrected later, its report is updated and a correction notice is posted.",
+  'tg.subtitle': "Each day's report is posted to this site's Telegram channel 30 minutes after that day's log is saved. If a day still has no log by 9 am the next morning (Ethiopia time), a report saying the log is missing is posted. A weekly summary follows on Sundays at 8 pm. If a day that was already posted is corrected later, its report is updated and a correction notice is posted.",
   'tg.sendPast': 'Send past reports', 'tg.posting': 'Posting…',
   'tg.confirmPast': 'Post all past reports to the channel? It takes a few seconds per report. Keep this page open until it finishes.',
   'tg.pastProgress': 'Posting past reports…', 'tg.pastDone': 'All past reports are posted.',
@@ -2000,7 +2000,7 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 // ============================================================
 // The bot runs in Supabase and is deployed by hand, so it can fall behind the app.
 // scripts/check-telegram-calc.mjs keeps this equal to BOT_VERSION in the bot's code.
-const TELEGRAM_BOT_VERSION = '9d359915bf';
+const TELEGRAM_BOT_VERSION = 'eee2a2a9ee';
 const TELEGRAM_BOT_FILE = 'https://github.com/Semegn/armada-mining/blob/main/supabase/functions/telegram-reports/index.ts';
 
 function TelegramSettings({ site, profile }) {

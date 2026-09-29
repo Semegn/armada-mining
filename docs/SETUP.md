@@ -53,8 +53,10 @@ Changes to the live database are kept as numbered SQL files in `docs/migrations/
 
 ## Telegram reports
 
-Each site can post a daily report (8 pm Ethiopia time) and a weekly summary
-(Sundays, 8 pm) to its own private Telegram channel. The bot runs as the Supabase
+Each site can post a daily report and a weekly summary (Sundays, 8 pm) to its own
+private Telegram channel. A day's report is posted 30 minutes after that day's daily log
+is saved, whatever the hour. If a day still has no log by 9 am the next morning (Ethiopia
+time), a report saying the log is missing is posted instead. The bot runs as the Supabase
 Edge Function `telegram-reports` (`supabase/functions/telegram-reports/index.ts`).
 Its key lives only in Supabase secrets, never in the code.
 
@@ -71,7 +73,8 @@ One-time setup:
    calling itself. With the Supabase CLI instead:
    `supabase functions deploy telegram-reports --no-verify-jwt`.
 4. **Schedule it.** Run `docs/migrations/003_telegram_reports.sql`, then
-   `docs/migrations/004_telegram_history.sql` (see "Database changes").
+   `docs/migrations/004_telegram_history.sql`, then `docs/migrations/005_telegram_daily_on_save.sql`
+   (see "Database changes").
 5. **Create the channels.** For each site, create a **private** Telegram channel and
    add the bot as an administrator that can post messages.
 6. **Connect them.** In the app, sign in as super admin, open the site, go to Inputs →
