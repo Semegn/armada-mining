@@ -92,11 +92,14 @@ because Telegram doesn't notify readers of edits. Later reports aren't rewritten
 daily report shows the corrected totals.
 
 Whenever `supabase/functions/telegram-reports/index.ts` changes, paste the new version into
-the function in Supabase and deploy again.
+the function in Supabase and deploy again. The Telegram Reports section in the app shows a
+warning, with a link to the latest file, whenever the bot in Supabase is missing or out of date.
 
 Before deploying a changed version of the bot, run `node scripts/check-telegram-calc.mjs`.
 The bot carries copies of the app's calculations so the reports match the app, and this
-check fails if the copies no longer match `src/App.jsx`.
+check fails if the copies no longer match `src/App.jsx`. It also says what the bot's version
+number (`BOT_VERSION` in the bot, `TELEGRAM_BOT_VERSION` in `src/App.jsx`) must be after
+any change to the bot.
 
 ## Deployment
 

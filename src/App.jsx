@@ -74,7 +74,7 @@ class MockQueryBuilder {
       initial = [
         { id: 'log-1', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: todayISO(), cleaning_hrs: 6, prep_hrs: 3, idle_hrs: 1, gold_g: 38.5, fuel_received_barrels: 2, notes: "Normal shift. Good gold concentration in the north wash plant." },
         { id: 'log-2', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), cleaning_hrs: 7, prep_hrs: 2, idle_hrs: 0, gold_g: 42.1, fuel_received_barrels: 2, notes: "Excavator routine service done." },
-        { id: 'log-3', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), cleaning_hrs: 5, prep_hrs: 4, idle_hrs: 2, gold_g: 29.8, fuel_received_barrels: 1.5, notes: "Minor clay blockage in screen box. Idle time due to belt adjustment." },
+        { id: 'log-3', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), cleaning_hrs: 5, prep_hrs: 4, idle_hrs: 2, gold_g: 29.8, fuel_received_barrels: 1, notes: "Minor clay blockage in screen box. Idle time due to belt adjustment." },
         { id: 'log-4', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 259200000).toISOString().slice(0, 10), cleaning_hrs: 8, prep_hrs: 1, idle_hrs: 0, gold_g: 45.0, fuel_received_barrels: 2, notes: "Excellent recovery day. Crew working very efficiently." },
         { id: 'log-5', site_id: 'demo-site-id', logged_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), cleaning_hrs: 6, prep_hrs: 2, idle_hrs: 1, gold_g: 34.2, fuel_received_barrels: 2, notes: "Rain in the evening but did not affect cleaning." }
       ];
@@ -341,6 +341,11 @@ const fmtNum = (n, d = 1) => {
   if (n === null || n === undefined || isNaN(n)) return '—';
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
 };
+// Fuel is counted in whole barrels; show a decimal only when part-barrels were entered.
+const fmtBarrels = (n) => {
+  const tenths = Math.round(Number(n) * 10) / 10;
+  return fmtNum(n, Number.isInteger(tenths) ? 0 : 1);
+};
 
 const CATEGORIES = [
   'Fuel', 'Machine Rental', 'Crew Salaries', 'Accommodation & Food',
@@ -403,6 +408,7 @@ const EN_STRINGS = {
   'tx.gramsSold': 'Grams Sold', 'tx.goldSale': 'Gold Sale', 'tx.loan': 'Loan',
   'tx.investment': 'Investment', 'tx.otherIncome': 'Other Income',
   'tx.barrelsReceived': 'Barrels Received', 'tx.hrsAdded': 'Machine Hours Added',
+  'tx.noBarrelsConfirm': "No barrels entered, so this fuel won't be added to the fuel stock. Save anyway?",
   'tx.editing': 'Editing entry from', 'tx.confirmDelete': 'Delete this statement entry? The change history keeps a record of it.',
   // Editing
   'edit.edit': 'Edit', 'edit.saveChanges': 'Save Changes', 'edit.delete': 'Delete',
@@ -452,6 +458,8 @@ const EN_STRINGS = {
   'tg.saved': 'Channel connected.', 'tg.removed': 'Channel disconnected. No more reports will be posted for this site.',
   'tg.help': 'Before connecting, add the bot to a private channel as an admin that can post messages. Keep the channel private: reports include cash and gold figures.',
   'tg.demoNote': 'Telegram reports are not available in Demo Mode.',
+  'tg.outdated': 'The Telegram bot in Supabase is missing or out of date, so some buttons and reports may not work. Paste the latest bot file into Supabase (Edge Functions → telegram-reports) and deploy it again.',
+  'tg.openBotFile': 'Open the latest bot file',
 };
 
 const SUPPORTED_LOCALES = [
@@ -896,30 +904,21 @@ function WeekCalendar({ logs, transactions, selectedWeek, onSelectWeek }) {
   );
 }
 
-// Fuel used on one day, in litres: the barrels entered in the daily log, or, on a day with
-// none entered, the estimate from working hours (idle machines don't burn working fuel).
-const dailyFuelUsedL = (log, inputs) => {
-  const barrels = Number(log.fuel_received_barrels) || 0;
-  return barrels > 0
-    ? barrels * Number(inputs.fuel_per_barrel)
-    : (Number(log.cleaning_hrs) || 0) * Number(inputs.cleaning_fuel_rate) + (Number(log.prep_hrs) || 0) * Number(inputs.prep_fuel_rate);
-};
-
 function weeklySnap(inputs, logs, transactions, selectedWeek) {
   if (!inputs || !selectedWeek) return null;
   const weekEnd = addDays(selectedWeek, 6);
   const snapLogs = logs.filter((l) => l.date <= weekEnd);
   const snapTxs = transactions.filter((t) => t.date <= weekEnd);
 
-  // Deliveries come from Fuel payments; the daily log's barrels are fuel used (see dailyFuelUsedL)
+  // Fuel is counted in barrels: in = Barrels Received on Fuel purchases, out = Fuel Used in daily logs
   const fuelReceivedBarrels = snapTxs.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
   const cleaningHrs = snapLogs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
   const prepHrs = snapLogs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
   const idleHrs = snapLogs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
   const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-  const fuelConsumedL = snapLogs.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0);
-  const fuelRemainingBarrels = (Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel) + fuelReceivedBarrels * Number(inputs.fuel_per_barrel) - fuelConsumedL) / Number(inputs.fuel_per_barrel);
+  const fuelUsedBarrels = snapLogs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+  const fuelRemainingBarrels = Number(inputs.fuel_barrels_opening) + fuelReceivedBarrels - fuelUsedBarrels;
   const machineHrsToppedUpTxs = snapTxs.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
   const machineHrsRemaining = Number(inputs.machine_hrs_opening) + machineHrsToppedUpTxs - totalHrs;
 
@@ -1029,7 +1028,7 @@ function WeeklyReport({ inputs, logs, transactions }) {
                 <Tile label={t('tile.cashOnHand')} value={fmtETB(snap.cashOnHand)} unit="ETB" />
                 <Tile label={t('tile.goldOnHand')} value={fmtNum(snap.goldOnHand, 1)} unit={t('tile.grams')}
                   sub={`${fmtNum(snap.goldSold, 1)}g sold`} />
-                <Tile label={t('tile.fuelRemaining')} value={fmtNum(snap.fuelRemainingBarrels, 1)} unit={t('tile.barrels')}
+                <Tile label={t('tile.fuelRemaining')} value={fmtBarrels(snap.fuelRemainingBarrels)} unit={t('tile.barrels')}
                   sub={`${t('tile.asOf')} ${snap.weekEnd}`} alert={snap.fuelRemainingBarrels < 7} />
                 <Tile label={t('tile.machineHours')} value={fmtNum(snap.machineHrsRemaining, 0)} unit={t('tile.hours')}
                   sub={`${t('tile.asOf')} ${snap.weekEnd}`} alert={snap.machineHrsRemaining < 100} />
@@ -1230,19 +1229,15 @@ function Dashboard({ site, inputs, logs, transactions }) {
     const latestLog = logs[0];
 
     // Cumulative fuel & machine hours
-    // Deliveries come from Fuel payments; the daily log's barrels are fuel used (see dailyFuelUsedL)
+    // Fuel is counted in barrels: in = Barrels Received on Fuel purchases, out = Fuel Used in daily logs
     const fuelReceivedBarrels = transactions.filter(t => t.type === 'expense' && t.category === 'Fuel').reduce((s, t) => s + (Number(t.fuel_barrels_topped_up) || 0), 0);
     const cleaningHrs = logs.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0), 0);
     const prepHrs = logs.reduce((s, l) => s + (Number(l.prep_hrs) || 0), 0);
     const idleHrs = logs.reduce((s, l) => s + (Number(l.idle_hrs) || 0), 0);
     const totalHrs = cleaningHrs + prepHrs + idleHrs;
 
-    // Fuel used (liters): the barrels entered each day, or the hours estimate on days with none
-    const fuelConsumedL = logs.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0);
-    const fuelOpeningL = Number(inputs.fuel_barrels_opening) * Number(inputs.fuel_per_barrel);
-    const fuelReceivedL = fuelReceivedBarrels * Number(inputs.fuel_per_barrel);
-    const fuelRemainingL = fuelOpeningL + fuelReceivedL - fuelConsumedL;
-    const fuelRemainingBarrels = fuelRemainingL / Number(inputs.fuel_per_barrel);
+    const fuelUsedBarrels = logs.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0);
+    const fuelRemainingBarrels = Number(inputs.fuel_barrels_opening) + fuelReceivedBarrels - fuelUsedBarrels;
 
     // Machine hours: opening + top-ups from Machine Rental expense transactions − all billable hours
     const machineHrsToppedUpTxs = transactions.filter(t => t.type === 'expense' && t.category === 'Machine Rental').reduce((s, t) => s + (Number(t.machine_hrs_topped_up) || 0), 0);
@@ -1280,9 +1275,9 @@ function Dashboard({ site, inputs, logs, transactions }) {
     // Runways — use last 7 days of data
     const last7 = logs.slice(0, 7);
     const last7Hrs = last7.reduce((s, l) => s + (Number(l.cleaning_hrs) || 0) + (Number(l.prep_hrs) || 0), 0);
-    const last7Fuel = last7.length > 0 ? last7.reduce((s, l) => s + dailyFuelUsedL(l, inputs), 0) / Math.min(last7.length, 7) : 0;
+    const last7Fuel = last7.length > 0 ? last7.reduce((s, l) => s + (Number(l.fuel_received_barrels) || 0), 0) / Math.min(last7.length, 7) : 0;
     const avgDailyHrs = last7.length > 0 ? last7Hrs / Math.min(last7.length, 7) : 0;
-    const fuelRunwayDays = last7Fuel > 0 ? fuelRemainingL / last7Fuel : null;
+    const fuelRunwayDays = last7Fuel > 0 ? fuelRemainingBarrels / last7Fuel : null;
     const machineRunwayDays = avgDailyHrs > 0 ? machineHrsRemaining / avgDailyHrs : null;
     const wcRunway = (fuelRunwayDays !== null && machineRunwayDays !== null)
       ? Math.min(fuelRunwayDays, machineRunwayDays)
@@ -1338,7 +1333,7 @@ function Dashboard({ site, inputs, logs, transactions }) {
           <Tile label={t('tile.cashOnHand')} value={fmtETB(calc.cashOnHand)} unit="ETB" />
           <Tile label={t('tile.goldOnHand')} value={fmtNum(calc.goldOnHand, 1)} unit={t('tile.grams')}
             sub={`${fmtNum(calc.goldSold, 1)}g ${t('tile.goldSold') || 'sold'}`} />
-          <Tile label={t('tile.fuelRemaining')} value={fmtNum(calc.fuelRemainingBarrels, 1)} unit={t('tile.barrels')}
+          <Tile label={t('tile.fuelRemaining')} value={fmtBarrels(calc.fuelRemainingBarrels)} unit={t('tile.barrels')}
             sub={calc.fuelRunwayDays !== null ? `${fmtNum(calc.fuelRunwayDays, 1)} ${t('tile.days')}` : '—'}
             alert={calc.fuelRemainingBarrels < 7} />
           <Tile label={t('tile.machineHours')} value={fmtNum(calc.machineHrsRemaining, 0)} unit={t('tile.hours')}
@@ -1686,6 +1681,9 @@ function Transactions({ site, transactions, profile, onRefresh }) {
 
   const handleSave = async () => {
     setError('');
+    // A Fuel purchase without barrels adds nothing to the fuel stock; make sure that's intended.
+    if (form.type === 'expense' && form.category === 'Fuel' && !(Number(form.fuel_barrels_topped_up) > 0)
+      && !window.confirm(t('tx.noBarrelsConfirm'))) return;
     setSaving(true);
     const payload = {
       site_id: site.id,
@@ -2000,6 +1998,11 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 // ============================================================
 // TELEGRAM REPORTS (super admin, inside Inputs)
 // ============================================================
+// The bot runs in Supabase and is deployed by hand, so it can fall behind the app.
+// scripts/check-telegram-calc.mjs keeps this equal to BOT_VERSION in the bot's code.
+const TELEGRAM_BOT_VERSION = '9d359915bf';
+const TELEGRAM_BOT_FILE = 'https://github.com/Semegn/armada-mining/blob/main/supabase/functions/telegram-reports/index.ts';
+
 function TelegramSettings({ site, profile }) {
   const { t } = useT();
   const demo = isDemoActive();
@@ -2007,6 +2010,7 @@ function TelegramSettings({ site, profile }) {
   const [channels, setChannels] = useState(null);
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState(null);
+  const [botOutdated, setBotOutdated] = useState(false);
 
   useEffect(() => {
     if (demo) return;
@@ -2023,6 +2027,14 @@ function TelegramSettings({ site, profile }) {
     try { message = (await error.context.json()).error || message; } catch (_) {}
     throw new Error(message);
   };
+
+  // Warn when the bot in Supabase is missing or older than this app expects.
+  useEffect(() => {
+    if (demo) return;
+    callBot({ action: 'version' })
+      .then((data) => setBotOutdated(data?.version !== TELEGRAM_BOT_VERSION))
+      .catch(() => setBotOutdated(true));
+  }, [demo]);
 
   const run = async (name, action) => {
     setBusy(name);
@@ -2088,6 +2100,12 @@ function TelegramSettings({ site, profile }) {
           <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">{t('tg.demoNote')}</div>
         ) : (
           <>
+            {botOutdated && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 text-xs">
+                {t('tg.outdated')}{' '}
+                <a href={TELEGRAM_BOT_FILE} target="_blank" rel="noreferrer" className="underline font-semibold">{t('tg.openBotFile')}</a>
+              </div>
+            )}
             <div className="text-stone-900">
               {setting
                 ? <>{t('tg.connected')} <span className="font-semibold break-words">{setting.chat_title || setting.chat_id}</span></>

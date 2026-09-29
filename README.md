@@ -87,16 +87,15 @@ Cost per Gram = Total Costs / Net Saleable Gold
 
 **Working Capital:**
 ```
-Fuel Remaining = opening + delivered (Barrels Received on Fuel payments) - used (daily logs)
+Fuel Remaining (barrels) = opening + Barrels Received on Fuel purchases - Fuel Used in daily logs
 Machine Hours Remaining = opening + topped_up - used
 Cash on Hand = opening_cash + credits - expenses
 ```
 
 Runway calculations:
 ```
-Daily Fuel Used = barrels entered in the daily log (Fuel Used), or on a day with none:
-                  cleaning_hrs × cleaning_fuel_rate + prep_hrs × prep_fuel_rate
-Fuel Runway (days) = fuel_remaining_liters / avg_daily_consumption
+Daily Fuel Used = barrels entered in the daily log (Fuel Used); a day with none entered counts as 0
+Fuel Runway (days) = fuel_remaining_barrels / average barrels used per day (last 7 logs)
 Machine Runway (days) = machine_hrs_remaining / avg_daily_hours
 ```
 
