@@ -32,9 +32,17 @@ npm run build
 ```
 
 Output is in `dist/`. Deploy to:
-- **Netlify:** Drag `dist/` to https://app.netlify.app/drop (or connect GitHub)
+- **Netlify:** Drag `dist/` to https://app.netlify.app/drop (or connect GitHub) ⭐ Recommended
 - **Vercel:** Same process
 - **Any static host:** Just serve the `dist/` folder
+
+**For detailed deployment instructions, see `DEPLOYMENT_GUIDE.md`**
+
+### For Site Managers: Install on Android
+
+See `ANDROID_INSTALLATION.md` for step-by-step installation:
+- **PWA method** (recommended) — tap "Install" in Chrome
+- **APK method** — direct installation file
 
 ## How It Works
 
@@ -142,6 +150,35 @@ Works offline for already-loaded screens; syncs to Supabase when online.
 Create new users in Supabase Authentication, then link them in the `users` table with their role and site assignment.
 
 Eventually we'll add a user-management UI to the app. For now, it's SQL.
+
+## 📦 Android App Packaging
+
+**Status:** ✅ Ready to Deploy
+
+This app is packaged as a **Progressive Web App (PWA)** optimized for Android site managers:
+
+- **Installation:** Site managers tap "Install" in Chrome (no Play Store needed)
+- **Offline:** Works offline with automatic sync when back online
+- **Lightweight:** ~5MB on device vs 50-80MB for native APK
+- **Auto-updates:** New versions deploy instantly (no manual download)
+- **Deployment:** Takes 5 minutes (see guides below)
+
+### Quick Links
+
+- **📋 For Site Managers:** See `ANDROID_INSTALLATION.md` for step-by-step guide
+- **🚀 For Admins:** See `DEPLOYMENT_GUIDE.md` for deployment options
+- **✅ Ready-to-Deploy:** See `READY_TO_DEPLOY.md` for final checklist
+- **📝 Full Summary:** See `APP_PACKAGING_SUMMARY.md` for complete overview
+
+### Quick Deploy
+
+```bash
+npm run build
+# Then either:
+# 1. Drag dist/ to https://app.netlify.app/drop (Netlify)
+# 2. Run: vercel (Vercel)
+# 3. Copy dist/ to your server (your own hosting)
+```
 
 ## Roadmap
 
