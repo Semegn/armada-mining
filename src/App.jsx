@@ -561,22 +561,24 @@ const EN_STRINGS = {
   'site.primary': 'Primary — pits & shafts, sacks, mill', 'site.primaryTag': 'Primary',
   'phase.exploration': 'Exploration', 'phase.production': 'Production',
   'primary.lastEntry': 'Last entry', 'primary.noEntriesYet': 'No entries yet', 'primary.pitsShafts': 'pits & shafts',
-  'section.gold': 'Gold (All-Time)', 'section.sacks': 'Sacks (All-Time)',
-  'section.excavatorHours': 'Excavator Hours (All-Time)', 'section.goldSource': 'Where the Gold Came From',
   'tile.landowner': 'Landowner', 'tile.investors': 'Investors', 'tile.avgGrade': 'Average Grade',
-  'tile.sacksDug': 'Sacks Dug', 'tile.sacksMilled': 'Sacks Milled', 'tile.sacksWaiting': 'Sacks Waiting',
-  'tile.dugMinusMilled': 'dug − milled', 'tile.costPerSack': 'Cost per Sack', 'tile.perSackMilled': 'per sack milled',
+  'tile.sacksWaiting': 'Sacks Waiting',
   'tile.sacks': 'sacks', 'tile.idle': 'Idle',
-  'source.pits': 'Excavator pits', 'source.shafts': 'Hand-dug shafts',
   'shafts.title': 'Site Setup — Pits & Shafts', 'shafts.new': '+ New Pit or Shaft', 'common.cancel': 'Cancel',
   'shafts.name': 'Name', 'shafts.kind': 'Type', 'shafts.pit': 'Pit (excavator)', 'shafts.shaft': 'Shaft (hand-dug)',
   'shafts.pitShort': 'Excavator', 'shafts.shaftShort': 'Hand-dug',
   'shafts.openedOn': 'Opened On', 'shafts.productionFrom': 'Production From', 'shafts.closedOn': 'Closed On',
-  'shafts.formHint': 'Leave Start Production empty to start in exploration. Coordinates or a map link are optional.',
+  'shafts.formHint': 'GPS is required: stand at the pit and press Use my location. Leave Start Production empty to start in exploration. The map link is optional.',
   'shafts.editHint': 'Switch between exploration and production with the buttons on the card. Leave Closed On empty while it is open.',
-  'shafts.startProduction': 'Start Production From (optional)', 'shafts.latitude': 'Latitude (e.g. 10.0712)',
-  'shafts.longitude': 'Longitude (e.g. 34.5423)', 'shafts.mapLink': 'Map Link (paste from Google Maps)',
-  'shafts.badCoords': 'Enter both latitude (−90 to 90) and longitude (−180 to 180), or leave both empty.',
+  'shafts.startProduction': 'Start Production From (optional)', 'shafts.latitude': 'Latitude',
+  'shafts.longitude': 'Longitude', 'shafts.mapLink': 'Map Link (paste from Google Maps)',
+  'shafts.badCoords': 'Latitude must be between −90 and 90, longitude between −180 and 180.',
+  'shafts.gpsRequired': 'GPS position is required: enter latitude and longitude, or press Use my location at the pit.',
+  'shafts.useLocation': 'Use my location', 'shafts.locating': 'Finding location…',
+  'shafts.locationFailed': 'Could not get the phone location. Allow location for this app, or type the numbers.',
+  'shafts.gpsMissing': 'GPS missing — add it with Edit',
+  'dash.money': 'Money', 'dash.geology': 'Geology', 'dash.produced': 'produced',
+  'dash.explShort': 'Expl', 'dash.prodShort': 'Prod',
   'shafts.openMap': 'Open in map', 'shafts.depth': 'Depth', 'shafts.veinLostFor': 'Vein lost for', 'shafts.since': 'since',
   'shafts.from': 'from', 'shafts.backDate': 'Back to exploration from', 'shafts.backToExploration': 'Back to Exploration',
   'shafts.phaseHistory': 'Phase changes',
@@ -1799,6 +1801,7 @@ function NotesField({ label, value, onChange }) {
 
 function PrimaryDashboard({ inputs, shafts, sackCounts, results, excavatorLogs, transactions }) {
   const { t } = useT();
+  const [view, setView] = useState('money');
   const calc = useMemo(() => primarySnap(inputs, shafts, sackCounts, results, excavatorLogs, transactions),
     [inputs, shafts, sackCounts, results, excavatorLogs, transactions]);
 
@@ -1807,6 +1810,8 @@ function PrimaryDashboard({ inputs, shafts, sackCounts, results, excavatorLogs, 
 
   const sc = STATUS_COLORS[calc.status];
   const landownerPct = Math.round(Number(inputs.landowner_share) * 100);
+  const sackTonnes = Number(inputs.sack_kg) / 1000;
+  const today = todayISO();
 
   return (
     <div className="space-y-4">
@@ -1818,99 +1823,86 @@ function PrimaryDashboard({ inputs, shafts, sackCounts, results, excavatorLogs, 
             {calc.reasons.length > 0 && ` (${calc.reasons.join(', ')})`}
           </div>
           <div className="text-xs text-stone-600 mt-0.5">
-            {t('primary.lastEntry')}: {calc.lastEntryDate || t('primary.noEntriesYet')} · {shafts.length} {t('primary.pitsShafts')} · {calc.txCount} {t('status.transactions')}
+            {t('primary.lastEntry')}: {calc.lastEntryDate || t('primary.noEntriesYet')} · {shafts.length} {t('primary.pitsShafts')}
           </div>
         </div>
       </div>
 
-      <Section title={t('section.workingCapital')}>
-        <div className={`grid grid-cols-2 gap-px bg-stone-200 ${calc.excavatorOn ? 'lg:grid-cols-4' : ''}`}>
-          <Tile label={t('tile.cashOnHand')} value={fmtETB(calc.cashOnHand)} unit="ETB" />
+      <div className="grid grid-cols-2 border border-stone-300">
+        {['money', 'geology'].map((v) => (
+          <button key={v} onClick={() => setView(v)}
+            className={`py-2 text-xs uppercase tracking-widest ${view === v ? 'bg-stone-900 text-white' : 'bg-white text-stone-600'}`}>
+            {t(`dash.${v}`)}
+          </button>
+        ))}
+      </div>
+
+      {view === 'money' ? (
+        <>
+          <div className="grid grid-cols-2 gap-px bg-stone-200">
+            <Tile label={t('tile.cashOnHand')} value={fmtETB(calc.cashOnHand)} unit="ETB" alert={calc.cashOnHand < Number(inputs.target_cash_reserve)} />
           <Tile label={t('tile.goldOnHand')} value={fmtNum(calc.goldOnHand, 1)} unit={t('tile.grams')}
             sub={`${fmtNum(calc.goldSold, 1)}g ${t('tile.goldSold')}`} />
+            <Tile label={t('tile.operatingCosts')} value={fmtETB(calc.totalCosts)} unit="ETB"
+              sub={`${fmtETB(calc.costPerGram)} ETB/g`} alert={calc.costPerGram > Number(inputs.gold_price)} />
+            <Tile label={t('tile.netProfit')} value={fmtETB(calc.profit)} unit="ETB" alert={calc.profit < 0}
+              sub={calc.profitSharePaid > 0 ? `${t('tile.profitShare')} ${fmtETB(calc.profitSharePaid)}` : `${t('tile.revenue')} ${fmtETB(calc.goldSaleRevenue)}`} />
           {calc.excavatorOn && (
             <>
               <Tile label={t('tile.fuelRemaining')} value={fmtBarrels(calc.fuelRemainingBarrels)} unit={t('tile.barrels')}
-                sub={calc.fuelRunwayDays !== null ? `${fmtNum(calc.fuelRunwayDays, 1)} ${t('tile.days')}` : '—'}
-                alert={calc.fuelRemainingBarrels < 7} />
+                  sub={calc.fuelRunwayDays !== null ? `${fmtNum(calc.fuelRunwayDays, 1)} ${t('tile.days')}` : '—'} alert={calc.fuelRemainingBarrels < 7} />
               <Tile label={t('tile.machineHours')} value={fmtNum(calc.machineHrsRemaining, 0)} unit={t('tile.hours')}
-                sub={calc.machineRunwayDays !== null ? `${fmtNum(calc.machineRunwayDays, 1)} ${t('tile.days')}` : '—'}
-                alert={calc.machineHrsRemaining < 100} />
+                  sub={calc.machineRunwayDays !== null ? `${fmtNum(calc.machineRunwayDays, 1)} ${t('tile.days')}` : '—'} alert={calc.machineHrsRemaining < 100} />
             </>
           )}
         </div>
-      </Section>
-
-      <Section title={t('section.gold')}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-          <Tile label={t('tile.goldProduced')} value={fmtNum(calc.grossGold, 1)} unit={t('tile.grams')}
-            sub={`${t('phase.exploration')} ${fmtNum(calc.explorationGold, 1)} · ${t('phase.production')} ${fmtNum(calc.productionGold, 1)}`} />
-          <Tile label={`${t('tile.landowner')} ${landownerPct}%`} value={fmtNum(calc.landownerGold, 1)} unit={t('tile.grams')} />
-          <Tile label={`${t('tile.investors')} ${100 - landownerPct}%`} value={fmtNum(calc.netSaleableGold, 1)} unit={t('tile.grams')} />
-          <Tile label={t('tile.avgGrade')} value={fmtNum(calc.gPerSack, 2)} unit="g/sack" sub={`${fmtNum(calc.gPerTonne, 1)} g/t`} />
+          <div className="bg-white border border-stone-200 px-4 py-3 text-xs text-stone-700">
+            {fmtNum(calc.grossGold, 1)} g {t('dash.produced')} · {t('tile.landowner')} {landownerPct}%: {fmtNum(calc.landownerGold, 1)} g · {t('tile.investors')} {100 - landownerPct}%: {fmtNum(calc.netSaleableGold, 1)} g
         </div>
-      </Section>
-
-      <Section title={t('section.sacks')}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-          <Tile label={t('tile.sacksDug')} value={fmtNum(calc.sacksDug, 0)} unit={t('tile.sacks')} />
-          <Tile label={t('tile.sacksMilled')} value={fmtNum(calc.sacksMilled, 0)} unit={t('tile.sacks')} />
-          <Tile label={t('tile.sacksWaiting')} value={fmtNum(calc.sacksWaiting, 0)} unit={t('tile.sacks')}
-            sub={t('tile.dugMinusMilled')} alert={calc.sacksWaiting < 0} />
-          <Tile label={t('tile.costPerSack')} value={fmtETB(calc.costPerSack)} unit="ETB" sub={t('tile.perSackMilled')} />
-        </div>
-      </Section>
-
-      {calc.excavatorOn && (
-        <Section title={t('section.excavatorHours')}>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-            <Tile label={t('phase.exploration')} value={fmtNum(calc.explorationHrs, 0)} unit="hrs" />
-            <Tile label={t('phase.production')} value={fmtNum(calc.productionHrs, 0)} unit="hrs" />
-            <Tile label={t('tile.idle')} value={fmtNum(calc.idleHrs, 0)} unit="hrs" />
-            <Tile label={t('tile.totalHours')} value={fmtNum(calc.totalHrs, 0)} unit="hrs" />
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-px bg-stone-200">
+            <Tile label={t('tile.goldProduced')} value={fmtNum(calc.grossGold, 1)} unit="g"
+              sub={`${t('dash.explShort')} ${fmtNum(calc.explorationGold, 1)} · ${t('dash.prodShort')} ${fmtNum(calc.productionGold, 1)}`} />
+            <Tile label={t('tile.avgGrade')} value={fmtNum(calc.gPerSack, 2)} unit="g/sack" sub={`${fmtNum(calc.gPerTonne, 1)} g/t`} />
+            <Tile label={t('tile.sacksWaiting')} value={fmtNum(calc.sacksWaiting, 0)} unit={t('tile.sacks')} alert={calc.sacksWaiting < 0} />
           </div>
-        </Section>
-      )}
-
-      {calc.pits.count > 0 && (
-        <Section title={t('section.goldSource')}>
           <div className="bg-white border border-stone-200 overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-stone-100 text-stone-600 uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="px-3 py-2 text-left"></th>
-                  <th className="px-3 py-2 text-right">{t('tile.sacksDug')}</th>
-                  <th className="px-3 py-2 text-right">{t('tile.sacksMilled')}</th>
-                  <th className="px-3 py-2 text-right">{t('results.colGold')}</th>
-                  <th className="px-3 py-2 text-right">{t('results.colGps')}</th>
+                  <th className="px-2 py-2 text-left">{t('sacks.colShaft')}</th>
+                  <th className="px-2 py-2 text-right">{t('sacks.colDepth')}</th>
+                  <th className="px-2 py-2 text-left">{t('sacks.colVein')}</th>
+                  <th className="px-2 py-2 text-right">{t('results.colGps')}</th>
                 </tr>
               </thead>
               <tbody>
-                {[['source.pits', calc.pits], ['source.shafts', calc.handDug]].map(([key, s]) => (
-                  <tr key={key} className="border-t border-stone-100">
-                    <td className="px-3 py-2 font-medium text-stone-900 whitespace-nowrap">{t(key)}</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(s.dug, 0)}</td>
-                    <td className="px-3 py-2 text-right">{fmtNum(s.milled, 0)}</td>
-                    <td className="px-3 py-2 text-right font-medium text-amber-700">{fmtNum(s.gold, 1)}</td>
-                    <td className="px-3 py-2 text-right">{s.milled > 0 ? fmtNum(s.gold / s.milled, 2) : '—'}</td>
+                {[...shafts].filter((s) => !s.closed_on).sort(openFirst).map((s) => {
+                  const st = calc.perShaft.find((p) => p.shaft.id === s.id);
+                  const pr = pitProgress(s.id, sackCounts);
+                  const lost = pr.vein === 'lost' && pr.lostSince && daysBetween(pr.lostSince, today) >= 3;
+                  return (
+                    <tr key={s.id} className={`border-t border-stone-100 ${lost ? 'bg-red-50/60' : ''}`}>
+                      <td className="px-2 py-2">
+                        <div className="font-medium text-stone-900 whitespace-nowrap">{s.name}</div>
+                        <div className="mt-1"><PhaseBadge phase={resultPhase(s, today)} /></div>
+                      </td>
+                      <td className="px-2 py-2 text-right whitespace-nowrap">{pr.depth !== null ? `${fmtNum(pr.depth, 1)} m` : '—'}</td>
+                      <td className="px-2 py-2"><VeinBadge vein={pr.vein} /></td>
+                      <td className={`px-2 py-2 text-right ${st?.gPerSack >= Number(inputs.cutoff_g_per_sack) ? 'text-emerald-700 font-semibold' : ''}`}>
+                        {st?.gPerSack !== null && st?.gPerSack !== undefined ? fmtNum(st.gPerSack, 2) : '—'}
+                      </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </Section>
+          <PitComparisonChart shafts={shafts} sackCounts={sackCounts} results={results} inputs={inputs} />
+        </>
       )}
-
-      <PitCharts shafts={shafts} sackCounts={sackCounts} results={results} inputs={inputs} />
-
-      <Section title={t('section.financials')}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
-          <Tile label={t('tile.revenue')} value={fmtETB(calc.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
-          <Tile label={t('tile.operatingCosts')} value={fmtETB(calc.totalCosts)} unit="ETB" sub={`${fmtETB(calc.costPerGram)} ETB/g`} alert={calc.costPerGram > Number(inputs.gold_price)} />
-          <Tile label={t('tile.profitShare')} value={fmtETB(calc.profitSharePaid)} unit="ETB" />
-          <Tile label={t('tile.netProfit')} value={fmtETB(calc.profit)} unit="ETB" alert={calc.profit < 0} />
-        </div>
-      </Section>
     </div>
   );
 }
@@ -2166,12 +2158,28 @@ function Shafts({ site, shafts, sackCounts, results, samples, inputs, profile, o
   const [quick, setQuick] = useState(null);
   const [open, setOpen] = useState({});
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
   const formRef = useRef(null);
   const canAdd = canAddPrimary(profile);
   const cutoff = Number(inputs?.cutoff_g_per_sack);
   const sackTonnes = Number(inputs?.sack_kg) / 1000;
   const today = todayISO();
+
+  // Fills latitude and longitude from the phone's GPS while standing at the pit.
+  const useMyLocation = () => {
+    setError('');
+    if (!navigator.geolocation) { setError(t('shafts.locationFailed')); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        setForm((f) => ({ ...f, latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6) }));
+      },
+      () => { setLocating(false); setError(t('shafts.locationFailed')); },
+      { enableHighAccuracy: true, timeout: 20000 },
+    );
+  };
   const stats = useMemo(() => Object.fromEntries(shaftStats(shafts, sackCounts, results, cutoff).map((p) => [p.shaft.id, p])),
     [shafts, sackCounts, results, cutoff]);
   const toggle = (id, part) => setOpen({ ...open, [id]: open[id] === part ? null : part });
@@ -2204,9 +2212,9 @@ function Shafts({ site, shafts, sackCounts, results, samples, inputs, profile, o
     if (shafts.some((s) => s.id !== editing?.id && s.name.trim().toLowerCase() === name.toLowerCase())) { setError(t('shafts.nameTaken')); return; }
     const lat = form.latitude === '' ? null : Number(form.latitude);
     const lng = form.longitude === '' ? null : Number(form.longitude);
-    if ((lat !== null && !(lat >= -90 && lat <= 90)) || (lng !== null && !(lng >= -180 && lng <= 180)) || ((lat === null) !== (lng === null))) {
-      setError(t('shafts.badCoords')); return;
-    }
+    // Every pit or shaft needs its GPS position, for maps and modelling later.
+    if (lat === null || lng === null) { setError(t('shafts.gpsRequired')); return; }
+    if (!(lat >= -90 && lat <= 90) || !(lng >= -180 && lng <= 180)) { setError(t('shafts.badCoords')); return; }
     setSaving(true);
     const fields = {
       name, kind: form.kind, opened_on: form.opened_on || todayISO(), closed_on: form.closed_on || null,
@@ -2287,6 +2295,9 @@ function Shafts({ site, shafts, sackCounts, results, samples, inputs, profile, o
             <Field label={t('shafts.latitude')} type="number" value={form.latitude} onChange={(v) => setForm({ ...form, latitude: v })} />
             <Field label={t('shafts.longitude')} type="number" value={form.longitude} onChange={(v) => setForm({ ...form, longitude: v })} />
           </div>
+          <button type="button" onClick={useMyLocation} disabled={locating} className={`mt-3 ${SMALL_CLS}`}>
+            {locating ? t('shafts.locating') : t('shafts.useLocation')}
+          </button>
           <div className="mt-3"><Field label={t('shafts.mapLink')} value={form.map_link} onChange={(v) => setForm({ ...form, map_link: v })} /></div>
           <div className="text-[10px] text-stone-500 mt-2">{editing ? t('shafts.editHint') : t('shafts.formHint')}</div>
           <NotesField label={t('shafts.notes')} value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
@@ -2321,6 +2332,9 @@ function Shafts({ site, shafts, sackCounts, results, samples, inputs, profile, o
                   ? <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap bg-stone-100 text-stone-500">{t('shafts.closed')} {s.closed_on}</span>
                   : <PhaseBadge phase={phase} />}
               </div>
+              {(s.latitude === null || s.latitude === undefined || s.latitude === '') && (
+                <div className="text-[10px] uppercase tracking-wider text-red-700 mt-1">{t('shafts.gpsMissing')}</div>
+              )}
               {link && (
                 <div className="text-xs mt-1">
                   {s.latitude !== null && s.latitude !== undefined && <span className="text-stone-500">{s.latitude}, {s.longitude} · </span>}
@@ -2385,7 +2399,12 @@ function Shafts({ site, shafts, sackCounts, results, samples, inputs, profile, o
                 <button onClick={() => toggle(s.id, 'section')} className={SMALL_CLS}>{t('section.crossSection')}</button>
               </div>
               {open[s.id] === 'samples' && <SamplesPanel site={site} shaft={s} samples={samples} profile={profile} onRefresh={onRefresh} />}
-              {open[s.id] === 'section' && <CrossSection shaft={s} sackCounts={sackCounts} results={results} samples={samples} />}
+              {open[s.id] === 'section' && (
+                <>
+                  <CrossSection shaft={s} sackCounts={sackCounts} results={results} samples={samples} />
+                  <DepthGradeChart shaft={s} sackCounts={sackCounts} results={results} inputs={inputs} />
+                </>
+              )}
             </div>
           );
         })}
@@ -2603,35 +2622,18 @@ function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
   );
 }
 
-// Dashboard graphs: grams per sack for each pit or shaft, and grade against depth for one of them.
-function PitCharts({ shafts, sackCounts, results, inputs }) {
+// Grams per sack for each pit or shaft, coloured by its phase today, with the cut-off line.
+function PitComparisonChart({ shafts, sackCounts, results, inputs }) {
   const { t } = useT();
   const cutoff = Number(inputs?.cutoff_g_per_sack) || 0;
   const stats = shaftStats(shafts, sackCounts, results, cutoff).filter((p) => p.gPerSack !== null);
-  const [pick, setPick] = useState('');
-  const chosen = shafts.find((s) => s.id === pick) || stats[0]?.shaft;
   if (stats.length === 0) return null;
-
   const maxG = Math.max(cutoff, ...stats.map((p) => p.gPerSack)) * 1.15 || 1;
   const W = 300; const H = 150; const base = H - 22; const barW = Math.min(48, (W - 20) / stats.length - 8);
   const yG = (g) => base - (g / maxG) * (base - 10);
-
-  // Each result sits at the depth its pit had reached on the result's date.
-  const days = chosen ? sackCounts.filter((c) => c.shaft_id === chosen.id && c.depth_m != null).sort((a, b) => (a.date < b.date ? -1 : 1)) : [];
-  const depthOn = (date) => { let d = null; days.forEach((c) => { if (c.date <= date) d = Number(c.depth_m); }); return d; };
-  const points = chosen ? results.filter((r) => r.shaft_id === chosen.id && Number(r.sacks_milled) > 0)
-    .map((r) => ({ id: r.id, d: depthOn(r.date), g: r.gold_g / r.sacks_milled })).filter((p) => p.d !== null).sort((a, b) => a.d - b.d) : [];
-  // The depth axis covers this pit's own range, so the points spread across the chart.
-  const minD = points.length ? Math.min(...points.map((p) => p.d)) : 0;
-  const maxD = Math.max(minD + 1, ...points.map((p) => p.d));
-  const maxPG = Math.max(cutoff, ...points.map((p) => p.g), 0.1) * 1.15;
-  const px = (d) => 40 + ((d - minD) / (maxD - minD)) * (W - 70);
-  const py = (g) => base - (g / maxPG) * (base - 10);
-
   return (
-    <>
-      <Section title={t('chart.pitComparison')}>
         <div className="bg-white border border-stone-200 p-3">
+      <div className={LABEL_CLS}>{t('chart.pitComparison')}</div>
           <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-lg" role="img" aria-label={t('chart.pitComparison')}>
             <line x1="0" x2={W} y1={yG(cutoff)} y2={yG(cutoff)} stroke="#BA7517" strokeDasharray="4 3" />
             <text x={W - 2} y={yG(cutoff) - 3} fontSize="9" textAnchor="end" fill="#BA7517">{t('chart.cutoff')} {fmtNum(cutoff, 2)}</text>
@@ -2650,19 +2652,32 @@ function PitCharts({ shafts, sackCounts, results, inputs }) {
           <div className="text-[10px] text-stone-500 flex gap-3 mt-1">
             <span><span className="inline-block w-2 h-2 mr-1" style={{ background: '#1D9E75' }} />{t('phase.production')}</span>
             <span><span className="inline-block w-2 h-2 mr-1" style={{ background: '#378ADD' }} />{t('phase.exploration')}</span>
-            <span>g/sack</span>
           </div>
         </div>
-      </Section>
-      <Section title={t('chart.depthGrade')}>
-        <div className="bg-white border border-stone-200 p-3">
-          <select value={chosen?.id || ''} onChange={(e) => setPick(e.target.value)} className="border border-stone-300 px-2 py-1 text-xs mb-2">
-            {shafts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          {points.length === 0 ? (
-            <div className="text-xs text-stone-400 py-4">{t('chart.noDepthResults')}</div>
-          ) : (
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-lg" role="img" aria-label={t('chart.depthGrade')}>
+  );
+}
+
+// Grade against depth for one pit or shaft: each result sits at the depth the pit had reached on its date.
+function DepthGradeChart({ shaft, sackCounts, results, inputs }) {
+  const { t } = useT();
+  const cutoff = Number(inputs?.cutoff_g_per_sack) || 0;
+  const days = sackCounts.filter((c) => c.shaft_id === shaft.id && c.depth_m != null && c.depth_m !== '')
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const depthOn = (date) => { let d = null; days.forEach((c) => { if (c.date <= date) d = Number(c.depth_m); }); return d; };
+  const points = results.filter((r) => r.shaft_id === shaft.id && Number(r.sacks_milled) > 0)
+    .map((r) => ({ id: r.id, d: depthOn(r.date), g: r.gold_g / r.sacks_milled })).filter((p) => p.d !== null).sort((a, b) => a.d - b.d);
+  if (points.length === 0) return <div className="text-xs text-stone-400 mt-3">{t('chart.noDepthResults')}</div>;
+  const W = 300; const H = 150; const base = H - 22;
+  // The depth axis covers this pit's own range, so the points spread across the chart.
+  const minD = Math.min(...points.map((p) => p.d));
+  const maxD = Math.max(minD + 1, ...points.map((p) => p.d));
+  const maxPG = Math.max(cutoff, ...points.map((p) => p.g), 0.1) * 1.15;
+  const px = (d) => 40 + ((d - minD) / (maxD - minD)) * (W - 70);
+  const py = (g) => base - (g / maxPG) * (base - 10);
+  return (
+    <div className="mt-3">
+      <div className={LABEL_CLS}>{t('chart.depthGrade')}</div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md" role="img" aria-label={t('chart.depthGrade')}>
               <line x1="30" x2={W} y1={py(cutoff)} y2={py(cutoff)} stroke="#BA7517" strokeDasharray="4 3" />
               <line x1="30" x2="30" y1="5" y2={base} stroke="#D3D1C7" />
               <line x1="30" x2={W} y1={base} y2={base} stroke="#D3D1C7" />
@@ -2675,10 +2690,7 @@ function PitCharts({ shafts, sackCounts, results, inputs }) {
               <text x={W} y={H - 6} fontSize="9" textAnchor="end" fill="#888780">{fmtNum(maxD, 1)} m</text>
               <text x="2" y="12" fontSize="9" fill="#888780">g/sack</text>
             </svg>
-          )}
         </div>
-      </Section>
-    </>
   );
 }
 
@@ -2935,6 +2947,15 @@ function ExcavatorLogs({ site, logs, inputs, transactions, profile, onRefresh })
         <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('exc.title')}</div>
         <div className="text-sm text-stone-600">{logs.length} {t('exc.entries')}</div>
       </div>
+
+      {now && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
+          <Tile label={t('phase.exploration')} value={fmtNum(now.explorationHrs, 0)} unit="hrs" />
+          <Tile label={t('phase.production')} value={fmtNum(now.productionHrs, 0)} unit="hrs" />
+          <Tile label={t('tile.idle')} value={fmtNum(now.idleHrs, 0)} unit="hrs" />
+          <Tile label={t('tile.totalHours')} value={fmtNum(now.totalHrs, 0)} unit="hrs" />
+        </div>
+      )}
 
       {(canAdd || editing) && (
         <div ref={formRef} className="bg-white border border-stone-200 p-4">

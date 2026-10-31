@@ -71,20 +71,25 @@ pits and shafts, sacks, our own mill). Every existing site is alluvial and works
    the mill are entered on the Excavator tab.
 
 How the site is run in the app:
-- **Site Setup** (super admin and site managers): add each excavator pit or hand-dug shaft,
-  with GPS coordinates or a pasted map link. Each starts in exploration. **Switch to
+- **Site Setup** (super admin and site managers): add each excavator pit or hand-dug shaft.
+  Its GPS position is required (stand at the pit and press **Use my location**, or type the
+  numbers); a map link is optional. Pits without GPS show a "GPS missing" flag. Each starts in exploration. **Switch to
   Production** and **Back to Exploration** record their dates, so every result keeps the phase
   of its own date. The app suggests switching when the last 3 results average the cut-off or
   more, and warns when the vein has been lost for 3 days or more. Each card has **Samples**
   (dated quartz/stone samples with depth, a written description, visible gold yes/no and
-  photos) and a **Cross-section** drawn from the daily depths, vein, results and samples.
+  photos) and a **Cross-section** drawn from the daily depths, vein, results and samples, with
+  a depth vs grade graph.
   A pit or shaft with entries, results or samples can't be deleted; close it instead.
 - **Daily Entry**: tap a pit or shaft, enter sacks, depth reached (m) and the vein (found /
   lost / not reached), save, then the next one.
 - **Results**: sacks milled and the grams of gold they gave. The app shows grams per sack,
   g/t and the phase before saving, and asks first if more sacks are milled than are waiting.
 - **Statement**: as on alluvial sites, with expense types for primary mining.
-- The Dashboard shows a pit comparison (g per sack) and depth vs grade for a chosen pit.
+- The Dashboard has two views. **Money**: cash, unsold gold, costs, profit, the landowner /
+  investors split, and fuel and machine hours when the excavator is on. **Geology**: gold
+  produced (exploration / production), average grade, sacks waiting, each open pit's phase,
+  depth, vein and grade, and the pit comparison graph. Excavator hours are on the Excavator tab.
 - Sample photos are shrunk on the phone (about 200–400 KB each) and stored privately; only
   people assigned to the site can see them. Photos can't be added in Demo Mode.
 - All gold, exploration and production, is split landowner / investors by the landowner
