@@ -56,8 +56,9 @@ Changes to the live database are kept as numbered SQL files in `docs/migrations/
 A site is either **alluvial** (excavator, washing, daily logs) or **primary** (hard rock:
 pits and shafts, sacks, our own mill). Every existing site is alluvial and works as before.
 
-1. Run `docs/migrations/006_primary_mining.sql` once in Supabase → SQL Editor. Every check
-   row must say `true`. The app works before and after it is run.
+1. Run `docs/migrations/006_primary_mining.sql`, then `docs/migrations/007_pit_details_and_samples.sql`,
+   once each in Supabase → SQL Editor. Every check row must say `true`. 007 also creates the
+   private `samples` storage folder for sample photos.
 2. As super admin, choose **+ New Site → Site Type → Primary**. Assign site managers and
    partners to the site the same way as for any other site.
 3. In **Inputs**, set the gold price, landowner share, opening cash, target cash reserve,
@@ -70,14 +71,22 @@ pits and shafts, sacks, our own mill). Every existing site is alluvial and works
    the mill are entered on the Excavator tab.
 
 How the site is run in the app:
-- **Pits & Shafts**: add each excavator pit or hand-dug shaft. Each starts in exploration.
-  **Switch to Production** records the date: results from that date on count as production,
-  earlier ones stay exploration. The app suggests switching when the last 3 results average
-  the cut-off or more. A pit or shaft with sacks or results can't be deleted; close it instead.
-- **Sacks**: at the end of the day, one box per open pit or shaft.
+- **Site Setup** (super admin and site managers): add each excavator pit or hand-dug shaft,
+  with GPS coordinates or a pasted map link. Each starts in exploration. **Switch to
+  Production** and **Back to Exploration** record their dates, so every result keeps the phase
+  of its own date. The app suggests switching when the last 3 results average the cut-off or
+  more, and warns when the vein has been lost for 3 days or more. Each card has **Samples**
+  (dated quartz/stone samples with depth, a written description, visible gold yes/no and
+  photos) and a **Cross-section** drawn from the daily depths, vein, results and samples.
+  A pit or shaft with entries, results or samples can't be deleted; close it instead.
+- **Daily Entry**: tap a pit or shaft, enter sacks, depth reached (m) and the vein (found /
+  lost / not reached), save, then the next one.
 - **Results**: sacks milled and the grams of gold they gave. The app shows grams per sack,
   g/t and the phase before saving, and asks first if more sacks are milled than are waiting.
 - **Statement**: as on alluvial sites, with expense types for primary mining.
+- The Dashboard shows a pit comparison (g per sack) and depth vs grade for a chosen pit.
+- Sample photos are shrunk on the phone (about 200–400 KB each) and stored privately; only
+  people assigned to the site can see them. Photos can't be added in Demo Mode.
 - All gold, exploration and production, is split landowner / investors by the landowner
   share in Inputs (0.30 = 30%), the same as on alluvial sites.
 

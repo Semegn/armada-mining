@@ -63,7 +63,7 @@ class MockQueryBuilder {
       initial = [
         { id: 'demo-pit-1', site_id: primarySite, logged_by: demoUser, name: 'Pit 1', kind: 'pit', opened_on: daysAgo(20), production_from: daysAgo(10), closed_on: null, notes: 'Main quartz vein, opened by excavator.' },
         { id: 'demo-pit-2', site_id: primarySite, logged_by: demoUser, name: 'Pit 2', kind: 'pit', opened_on: daysAgo(8), production_from: null, closed_on: null, notes: 'Trench across the eastern vein.' },
-        { id: 'demo-shaft-1', site_id: primarySite, logged_by: demoUser, name: 'Shaft 1', kind: 'shaft', opened_on: daysAgo(25), production_from: daysAgo(3), closed_on: null, notes: null },
+        { id: 'demo-shaft-1', site_id: primarySite, logged_by: demoUser, name: 'Shaft 1', kind: 'shaft', opened_on: daysAgo(25), production_from: daysAgo(3), phase_history: [{ phase: 'production', from: daysAgo(3) }], closed_on: null, notes: null, latitude: 10.0712, longitude: 34.5423 },
         { id: 'demo-shaft-2', site_id: primarySite, logged_by: demoUser, name: 'Shaft 2', kind: 'shaft', opened_on: daysAgo(12), production_from: null, closed_on: null, notes: 'Low grade so far.' },
       ];
     } else if (this.table === 'sack_counts') {
@@ -73,9 +73,20 @@ class MockQueryBuilder {
         ['demo-shaft-1', [[6, 12], [5, 10], [4, 14], [3, 12], [2, 10], [1, 12], [0, 10]]],
         ['demo-shaft-2', [[6, 6], [4, 5], [2, 4]]],
       ];
-      initial = counts.flatMap(([shaft_id, days]) => days.map(([n, sacks]) => (
-        { id: `demo-sacks-${shaft_id}-${n}`, site_id: primarySite, logged_by: demoUser, shaft_id, date: daysAgo(n), sacks, notes: null }
+      // Depth grows a little each day; the vein is found, lost or not reached yet.
+      const depth = { 'demo-pit-1': [8, 0.6, 'found'], 'demo-pit-2': [3, 0.5, 'lost'], 'demo-shaft-1': [12, 1.2, 'found'], 'demo-shaft-2': [6, 0.8, 'not_reached'] };
+      initial = counts.flatMap(([shaft_id, days]) => days.map(([n, sacks], i) => (
+        { id: `demo-sacks-${shaft_id}-${n}`, site_id: primarySite, logged_by: demoUser, shaft_id, date: daysAgo(n), sacks,
+          depth_m: Math.round((depth[shaft_id][0] + (i + 1) * depth[shaft_id][1]) * 10) / 10,
+          vein: shaft_id === 'demo-pit-2' && i === 0 ? 'found' : depth[shaft_id][2], notes: null }
       )));
+    } else if (this.table === 'shaft_samples') {
+      initial = [
+        { id: 'demo-sample-1', site_id: primarySite, logged_by: demoUser, shaft_id: 'demo-pit-1', date: daysAgo(4), depth_m: 10.4, sample_type: 'quartz', visible_gold: true, photo_paths: [],
+          description: 'Milky white quartz, 20 cm wide, dipping east. Brown iron staining on fractures, some pyrite cubes. Two specks of visible gold.' },
+        { id: 'demo-sample-2', site_id: primarySite, logged_by: demoUser, shaft_id: 'demo-pit-2', date: daysAgo(1), depth_m: 4.5, sample_type: 'stone', visible_gold: false, photo_paths: [],
+          description: 'Grey schist, no quartz. Vein pinched out at about 4 m. Soft, weathered.' },
+      ];
     } else if (this.table === 'milling_results') {
       const results = [
         ['demo-pit-1', [[5, 60, 27.0], [3, 58, 27.8], [1, 56, 25.2]]],
@@ -545,7 +556,7 @@ const EN_STRINGS = {
   'tg.outdated': 'The Telegram bot in Supabase is missing or out of date, so some buttons and reports may not work. Paste the latest bot file into Supabase (Edge Functions → telegram-reports) and deploy it again.',
   'tg.openBotFile': 'Open the latest bot file',
   // Primary sites (pits & shafts, sacks, milling, excavator)
-  'nav.shafts': 'Pits & Shafts', 'nav.sacks': 'Sacks', 'nav.results': 'Results', 'nav.excavator': 'Excavator',
+  'nav.shafts': 'Site Setup', 'nav.sacks': 'Daily Entry', 'nav.results': 'Results', 'nav.excavator': 'Excavator',
   'site.type': 'Site Type', 'site.alluvial': 'Alluvial — excavator, washing, fuel',
   'site.primary': 'Primary — pits & shafts, sacks, mill', 'site.primaryTag': 'Primary',
   'phase.exploration': 'Exploration', 'phase.production': 'Production',
@@ -557,11 +568,35 @@ const EN_STRINGS = {
   'tile.dugMinusMilled': 'dug − milled', 'tile.costPerSack': 'Cost per Sack', 'tile.perSackMilled': 'per sack milled',
   'tile.sacks': 'sacks', 'tile.idle': 'Idle',
   'source.pits': 'Excavator pits', 'source.shafts': 'Hand-dug shafts',
-  'shafts.title': 'Pits & Shafts', 'shafts.new': '+ New Pit or Shaft', 'common.cancel': 'Cancel',
+  'shafts.title': 'Site Setup — Pits & Shafts', 'shafts.new': '+ New Pit or Shaft', 'common.cancel': 'Cancel',
   'shafts.name': 'Name', 'shafts.kind': 'Type', 'shafts.pit': 'Pit (excavator)', 'shafts.shaft': 'Shaft (hand-dug)',
   'shafts.pitShort': 'Excavator', 'shafts.shaftShort': 'Hand-dug',
   'shafts.openedOn': 'Opened On', 'shafts.productionFrom': 'Production From', 'shafts.closedOn': 'Closed On',
-  'shafts.formHint': 'Leave Production From empty while it is still in exploration, and Closed On empty while it is open.',
+  'shafts.formHint': 'Leave Start Production empty to start in exploration. Coordinates or a map link are optional.',
+  'shafts.editHint': 'Switch between exploration and production with the buttons on the card. Leave Closed On empty while it is open.',
+  'shafts.startProduction': 'Start Production From (optional)', 'shafts.latitude': 'Latitude (e.g. 10.0712)',
+  'shafts.longitude': 'Longitude (e.g. 34.5423)', 'shafts.mapLink': 'Map Link (paste from Google Maps)',
+  'shafts.badCoords': 'Enter both latitude (−90 to 90) and longitude (−180 to 180), or leave both empty.',
+  'shafts.openMap': 'Open in map', 'shafts.depth': 'Depth', 'shafts.veinLostFor': 'Vein lost for', 'shafts.since': 'since',
+  'shafts.from': 'from', 'shafts.backDate': 'Back to exploration from', 'shafts.backToExploration': 'Back to Exploration',
+  'shafts.phaseHistory': 'Phase changes',
+  'vein.found': 'Vein found', 'vein.lost': 'Vein lost', 'vein.not_reached': 'Not reached',
+  'sacks.depth': 'Depth Reached (m)', 'sacks.vein': 'Vein', 'sacks.notEntered': 'not entered',
+  'sacks.lastDepth': 'Last depth:', 'sacks.saveFor': 'Save', 'sacks.colDepth': 'Depth m', 'sacks.colVein': 'Vein',
+  'samples.title': 'Samples', 'samples.editing': 'Editing sample from', 'samples.date': 'Date', 'samples.depth': 'Depth (m)',
+  'samples.type': 'Type', 'samples.quartz': 'Quartz', 'samples.stone': 'Stone', 'samples.other': 'Other',
+  'samples.visibleGold': 'Visible gold', 'samples.description': 'What you see',
+  'samples.descriptionHint': 'Colour, texture, vein width and direction, sulphides (pyrite), iron staining, visible gold…',
+  'samples.photos': 'Photos', 'samples.demoNoPhotos': 'Photos can not be added in Demo Mode.',
+  'samples.save': 'Save Sample', 'samples.saving': 'Saving…', 'samples.none': 'No samples yet.',
+  'samples.needDescription': 'Describe what you see.', 'samples.badDepth': 'Depth must be 0 or more.',
+  'samples.photoFailed': 'A photo could not be uploaded, so nothing was saved.',
+  'samples.confirmDelete': 'Delete this sample and its photos? The change history keeps a record of it.',
+  'section.crossSection': 'Cross-section', 'section.noDepth': 'No depths entered yet. Enter Depth Reached in the Daily Entry.',
+  'section.resultsLegend': 'milling result (g/sack)', 'section.beforeEntries': 'dug before the first entry', 'section.samplesLegend': 'sample',
+  'chart.pitComparison': 'Pit Comparison (g per sack)', 'chart.cutoff': 'cut-off', 'chart.depthGrade': 'Depth vs Grade',
+  'chart.noDepthResults': 'No results with a known depth yet for this pit or shaft.',
+  'hist.sample': 'Sample',
   'shafts.notes': 'Notes',
   'shafts.save': 'Save', 'shafts.saving': 'Saving…', 'shafts.editing': 'Editing',
   'shafts.none': 'No pits or shafts yet. Add the first one to start counting sacks.',
@@ -574,7 +609,7 @@ const EN_STRINGS = {
   'shafts.nameRequired': 'Enter a name.', 'shafts.nameTaken': 'A pit or shaft with this name already exists at this site.',
   'shafts.hasData': "This pit or shaft has sacks or results, so it can't be deleted. Close it instead.",
   'shafts.confirmDelete': 'Delete this pit or shaft? The change history keeps a record of it.',
-  'sacks.title': 'Sacks', 'sacks.entries': 'entries', 'sacks.date': 'Date',
+  'sacks.title': 'Daily Entry', 'sacks.subtitle': 'Tap a pit or shaft, enter its day, save. Then the next one.', 'sacks.entries': 'entries', 'sacks.date': 'Date',
   'sacks.perShaft': 'Sacks dug, per pit or shaft', 'sacks.notes': 'Notes',
   'sacks.save': 'Save Counts', 'sacks.saving': 'Saving…',
   'sacks.noShafts': 'Add a pit or shaft first, on the Pits & Shafts tab.',
@@ -878,11 +913,12 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
   // Primary sites swap Daily Logs and Weekly for their own tabs; the rest stay the same.
   const siteTabs = !isPrimarySite(site) ? tabs : [
     tabs[0],
-    { id: 'shafts', label: t('nav.shafts') },
     { id: 'sacks', label: t('nav.sacks') },
     { id: 'results', label: t('nav.results') },
     ...(excavatorOn ? [{ id: 'excavator', label: t('nav.excavator') }] : []),
-    ...tabs.filter((tab) => !['dashboard', 'daily', 'weekly'].includes(tab.id)),
+    ...tabs.filter((tab) => ['transactions', 'history'].includes(tab.id)),
+    { id: 'shafts', label: t('nav.shafts') },
+    ...tabs.filter((tab) => ['inputs', 'language'].includes(tab.id)),
   ];
 
   return (
@@ -900,7 +936,7 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
                 localStorage.removeItem('armada_demo_daily_logs');
                 localStorage.removeItem('armada_demo_transactions');
                 localStorage.removeItem('armada_demo_inputs');
-                ['sites', 'shafts', 'sack_counts', 'milling_results', 'excavator_logs']
+                ['sites', 'shafts', 'sack_counts', 'milling_results', 'excavator_logs', 'shaft_samples']
                   .forEach((table) => localStorage.removeItem(`armada_demo_${table}`));
                 window.location.reload();
               }
@@ -1259,9 +1295,17 @@ const HISTORY_FIELDS = {
   ].map((key) => [key, `hist.f.${key}`]),
   shafts: [
     ['name', 'shafts.name'], ['kind', 'shafts.kind'], ['opened_on', 'shafts.openedOn'],
-    ['production_from', 'shafts.productionFrom'], ['closed_on', 'shafts.closedOn'], ['notes', 'shafts.notes'],
+    ['production_from', 'shafts.productionFrom'], ['phase_history', 'shafts.phaseHistory'], ['closed_on', 'shafts.closedOn'],
+    ['latitude', 'shafts.latitude'], ['longitude', 'shafts.longitude'], ['map_link', 'shafts.mapLink'], ['notes', 'shafts.notes'],
   ],
-  sack_counts: [['date', 'sacks.date'], ['shaft_id', 'sacks.shaft'], ['sacks', 'sacks.sacks'], ['notes', 'sacks.notes']],
+  sack_counts: [
+    ['date', 'sacks.date'], ['shaft_id', 'sacks.shaft'], ['sacks', 'sacks.sacks'], ['depth_m', 'sacks.depth'],
+    ['vein', 'sacks.vein'], ['notes', 'sacks.notes'],
+  ],
+  shaft_samples: [
+    ['date', 'samples.date'], ['shaft_id', 'sacks.shaft'], ['depth_m', 'samples.depth'], ['sample_type', 'samples.type'],
+    ['visible_gold', 'samples.visibleGold'], ['description', 'samples.description'], ['photo_paths', 'samples.photos'],
+  ],
   milling_results: [
     ['date', 'results.date'], ['shaft_id', 'results.shaft'], ['sacks_milled', 'results.sacksMilled'],
     ['gold_g', 'results.gold'], ['notes', 'results.notes'],
@@ -1275,7 +1319,7 @@ const HISTORY_FIELDS = {
 // Already in the entry's title line, so not repeated for added or deleted records.
 const HISTORY_TITLE_FIELDS = {
   daily_logs: ['date'], transactions: ['date', 'category', 'amount'],
-  shafts: ['name'], sack_counts: ['date', 'shaft_id'], milling_results: ['date', 'shaft_id'], excavator_logs: ['date'],
+  shafts: ['name'], sack_counts: ['date', 'shaft_id'], shaft_samples: ['date', 'shaft_id'], milling_results: ['date', 'shaft_id'], excavator_logs: ['date'],
 };
 // Bookkeeping columns that change on every save and mean nothing to readers.
 const HISTORY_IGNORED_FIELDS = new Set([
@@ -1301,7 +1345,11 @@ function HistoryEntry({ entry, shaftNames = {} }) {
   const valueOf = (key, v) => {
     if (key === 'shaft_id' && shaftNames[v]) return shaftNames[v];
     if (key === 'kind' && (v === 'pit' || v === 'shaft')) return t(`shafts.${v}`);
-    if (key === 'excavator_on' && typeof v === 'boolean') return t(v ? 'common.yes' : 'common.no');
+    if ((key === 'excavator_on' || key === 'visible_gold') && typeof v === 'boolean') return t(v ? 'common.yes' : 'common.no');
+    if (key === 'vein' && VEIN_STATES.includes(v)) return t(`vein.${v}`);
+    if (key === 'sample_type' && v) return t(`samples.${v}`);
+    if (key === 'photo_paths' && Array.isArray(v)) return `${v.length}`;
+    if (key === 'phase_history' && Array.isArray(v)) return v.map((h) => `${t(`phase.${h.phase}`)} ${h.from}`).join(', ') || '—';
     return key === 'type' && (v === 'expense' || v === 'credit') ? t(`tx.${v}`) : fmtHistoryValue(v);
   };
 
@@ -1332,6 +1380,7 @@ function HistoryEntry({ entry, shaftNames = {} }) {
   if (entry.table_name === 'shafts') title = `${t('hist.shaft')} · ${row.name || '—'}`;
   if (entry.table_name === 'sack_counts') title = `${t('hist.sackCount')} · ${row.date || '—'} · ${valueOf('shaft_id', row.shaft_id)}`;
   if (entry.table_name === 'milling_results') title = `${t('hist.millingResult')} · ${row.date || '—'} · ${valueOf('shaft_id', row.shaft_id)}`;
+  if (entry.table_name === 'shaft_samples') title = `${t('hist.sample')} · ${row.date || '—'} · ${valueOf('shaft_id', row.shaft_id)}`;
   if (entry.table_name === 'excavator_logs') title = `${t('hist.excavatorDay')} · ${row.date || '—'}`;
 
   const who = entry.changed_by ? (entry.changed_by_name || t('hist.unknownUser')) : t('hist.system');
@@ -1590,8 +1639,27 @@ function Tile({ label, value, unit, sub, alert }) {
 const canAddPrimary = (profile) => profile?.role === 'super_admin' || profile?.role === 'site_manager';
 // The super admin can change any entry; a site manager only the entries they made (same rule as the database).
 const canEditPrimary = (profile, row) => profile.role === 'super_admin' || (profile.role === 'site_manager' && row.logged_by === profile.id);
-// A result counts as production from the day its pit or shaft was switched to production.
-const resultPhase = (shaft, date) => (shaft?.production_from && date >= shaft.production_from ? 'production' : 'exploration');
+// The exploration/production switches of a pit or shaft, oldest first. Older rows that only
+// have production_from count as one switch to production on that date.
+const phaseHistory = (shaft) => {
+  const h = Array.isArray(shaft?.phase_history) ? shaft.phase_history : [];
+  if (h.length > 0) return [...h].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  return shaft?.production_from ? [{ phase: 'production', from: shaft.production_from }] : [];
+};
+// A result has the phase its pit or shaft was in on the result's date.
+const resultPhase = (shaft, date) => phaseHistory(shaft).reduce((p, c) => (date >= c.from ? c.phase : p), 'exploration');
+const VEIN_STATES = ['found', 'lost', 'not_reached'];
+// Latest depth and vein from the daily entries, and how many days the vein has been lost.
+const pitProgress = (shaftId, sackCounts) => {
+  const own = sackCounts.filter((c) => c.shaft_id === shaftId).sort(byNewest);
+  const withDepth = own.find((c) => c.depth_m !== null && c.depth_m !== undefined && c.depth_m !== '');
+  const withVein = own.find((c) => c.vein);
+  const lastFound = own.find((c) => c.vein === 'found');
+  const lostSince = withVein?.vein === 'lost'
+    ? own.filter((c) => c.vein === 'lost' && (!lastFound || c.date > lastFound.date)).map((c) => c.date).sort()[0]
+    : null;
+  return { depth: withDepth ? Number(withDepth.depth_m) : null, vein: withVein?.vein || null, lostSince };
+};
 const sumOf = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
 const byNewest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
 const openFirst = (a, b) => (Number(!!a.closed_on) - Number(!!b.closed_on)) || a.name.localeCompare(b.name);
@@ -1612,7 +1680,7 @@ function shaftStats(shafts, sackCounts, results, cutoff) {
       shaft: s, dug, milled, waiting: dug - milled, gold,
       gPerSack: milled > 0 ? gold / milled : null,
       last3Gps,
-      ready: !s.production_from && !s.closed_on && last3.length === 3 && last3Gps >= cutoff,
+      ready: resultPhase(s, todayISO()) === 'exploration' && !s.closed_on && last3.length === 3 && last3Gps >= cutoff,
     };
   });
 }
@@ -1833,6 +1901,8 @@ function PrimaryDashboard({ inputs, shafts, sackCounts, results, excavatorLogs, 
         </Section>
       )}
 
+      <PitCharts shafts={shafts} sackCounts={sackCounts} results={results} inputs={inputs} />
+
       <Section title={t('section.financials')}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
           <Tile label={t('tile.revenue')} value={fmtETB(calc.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
@@ -1845,77 +1915,312 @@ function PrimaryDashboard({ inputs, shafts, sackCounts, results, excavatorLogs, 
   );
 }
 
-function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh }) {
+const VEIN_CLS = { found: 'bg-amber-100 text-amber-900', lost: 'bg-red-50 text-red-700', not_reached: 'bg-stone-100 text-stone-600' };
+const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000);
+const mapUrl = (s) => (s.latitude !== null && s.latitude !== undefined && s.latitude !== '' && s.longitude !== null && s.longitude !== undefined && s.longitude !== ''
+  ? `https://www.google.com/maps?q=${s.latitude},${s.longitude}` : (s.map_link || null));
+
+function VeinBadge({ vein }) {
   const { t } = useT();
-  const blank = { name: '', kind: 'shaft', opened_on: todayISO(), production_from: '', closed_on: '', notes: '' };
+  if (!vein) return null;
+  return <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap ${VEIN_CLS[vein]}`}>{t(`vein.${vein}`)}</span>;
+}
+
+// Shrinks a phone photo to at most 1600 px on its long side, saved as JPEG (about 200–400 KB).
+const shrinkPhoto = (file) => new Promise((resolve, reject) => {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not read the photo.'))), 'image/jpeg', 0.75);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read the photo.')); };
+  img.src = url;
+});
+
+// Sample photos are private files; the app asks Supabase for links that work for an hour.
+// Photos are never uploaded or read in Demo Mode.
+function SamplePhotos({ paths }) {
+  const [urls, setUrls] = useState([]);
+  useEffect(() => {
+    if (isDemoActive() || !paths || paths.length === 0) { setUrls([]); return; }
+    let live = true;
+    realSupabase.storage.from('samples').createSignedUrls(paths, 3600).then(({ data }) => {
+      if (live) setUrls((data || []).map((d) => d.signedUrl).filter(Boolean));
+    });
+    return () => { live = false; };
+  }, [JSON.stringify(paths)]);
+  if (urls.length === 0) return null;
+  return (
+    <div className="flex gap-2 flex-wrap mt-2">
+      {urls.map((u) => (
+        <a key={u} href={u} target="_blank" rel="noreferrer">
+          <img src={u} alt="" className="w-20 h-20 object-cover border border-stone-200" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function SamplesPanel({ site, shaft, samples, profile, onRefresh }) {
+  const { t } = useT();
+  const demo = isDemoActive();
+  const blank = { date: todayISO(), depth_m: '', sample_type: 'quartz', visible_gold: false, description: '' };
+  const [form, setForm] = useState(blank);
+  const [files, setFiles] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const canAdd = canAddPrimary(profile);
+  const own = samples.filter((s) => s.shaft_id === shaft.id).sort(byNewest);
+
+  const reset = () => { setForm(blank); setFiles([]); setEditing(null); setError(''); };
+  const startEdit = (s) => {
+    setError(''); setFiles([]); setEditing(s);
+    setForm({ date: s.date, depth_m: s.depth_m ?? '', sample_type: s.sample_type, visible_gold: !!s.visible_gold, description: s.description || '' });
+  };
+
+  const handleSave = async () => {
+    setError('');
+    if (!form.description.trim()) { setError(t('samples.needDescription')); return; }
+    if (form.depth_m !== '' && !(Number(form.depth_m) >= 0)) { setError(t('samples.badDepth')); return; }
+    setSaving(true);
+    // Photos go up first; the sample is only saved once they are stored.
+    const uploaded = [];
+    for (const file of files) {
+      try {
+        const blob = await shrinkPhoto(file);
+        const path = `${site.id}/${shaft.id}/${Date.now()}-${uploaded.length}.jpg`;
+        const { error: upErr } = await realSupabase.storage.from('samples').upload(path, blob, { contentType: 'image/jpeg' });
+        if (upErr) throw upErr;
+        uploaded.push(path);
+      } catch (e) {
+        if (uploaded.length > 0) await realSupabase.storage.from('samples').remove(uploaded);
+        setSaving(false);
+        setError(`${t('samples.photoFailed')} ${e.message || ''}`);
+        return;
+      }
+    }
+    const fields = {
+      date: form.date, depth_m: form.depth_m === '' ? null : Number(form.depth_m), sample_type: form.sample_type,
+      visible_gold: !!form.visible_gold, description: form.description.trim(),
+      photo_paths: [...(editing?.photo_paths || []), ...uploaded],
+    };
+    const { data, error: err } = editing
+      ? await supabase.from('shaft_samples').update({ ...fields, updated_at: new Date().toISOString() }).eq('id', editing.id).select()
+      : await supabase.from('shaft_samples').insert({ ...fields, site_id: site.id, shaft_id: shaft.id, logged_by: profile.id });
+    setSaving(false);
+    if (err) {
+      if (uploaded.length > 0 && !demo) await realSupabase.storage.from('samples').remove(uploaded);
+      setError(err.message);
+      return;
+    }
+    if (editing && (!data || data.length === 0)) { setError(t('edit.notSaved')); return; }
+    reset();
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`${t('samples.confirmDelete')}\n${editing.date} · ${shaft.name}`)) return;
+    setSaving(true);
+    const { data, error: err } = await supabase.from('shaft_samples').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    if (!demo && editing.photo_paths?.length) await realSupabase.storage.from('samples').remove(editing.photo_paths);
+    reset();
+    onRefresh();
+  };
+
+  return (
+    <div className="border-t border-stone-100 mt-3 pt-3">
+      <div className={LABEL_CLS}>{t('samples.title')} ({own.length})</div>
+      {(canAdd || editing) && (
+        <div className="bg-stone-50 border border-stone-200 p-3 mb-3">
+          {editing && <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-2">{t('samples.editing')} {editing.date}</div>}
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t('samples.date')} type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+            <Field label={t('samples.depth')} type="number" value={form.depth_m} onChange={(v) => setForm({ ...form, depth_m: v })} />
+            <div>
+              <label className={LABEL_CLS}>{t('samples.type')}</label>
+              <select value={form.sample_type} onChange={(e) => setForm({ ...form, sample_type: e.target.value })} className={INPUT_CLS}>
+                {['quartz', 'stone', 'other'].map((k) => <option key={k} value={k}>{t(`samples.${k}`)}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-stone-700 mt-5 cursor-pointer">
+              <input type="checkbox" checked={form.visible_gold} onChange={(e) => setForm({ ...form, visible_gold: e.target.checked })} className="w-4 h-4 accent-amber-700" />
+              {t('samples.visibleGold')}
+            </label>
+          </div>
+          <div className="mt-2">
+            <label className={LABEL_CLS}>{t('samples.description')}</label>
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder={t('samples.descriptionHint')} className={INPUT_CLS} rows={3} />
+          </div>
+          <div className="mt-2">
+            <label className={LABEL_CLS}>{t('samples.photos')}</label>
+            {demo ? (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1">{t('samples.demoNoPhotos')}</div>
+            ) : (
+              <input type="file" accept="image/*" multiple onChange={(e) => setFiles([...e.target.files])} className="text-xs" />
+            )}
+          </div>
+          <ErrorBox error={error} />
+          <div className="flex flex-wrap gap-2 mt-2">
+            <button onClick={handleSave} disabled={saving} className={SAVE_CLS}>
+              {saving ? t('samples.saving') : editing ? t('edit.saveChanges') : t('samples.save')}
+            </button>
+            {editing && profile.role === 'super_admin' && <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>}
+            {editing && <button onClick={reset} className={CANCEL_CLS}>{t('common.cancel')}</button>}
+          </div>
+        </div>
+      )}
+      {own.length === 0 && <div className="text-xs text-stone-400">{t('samples.none')}</div>}
+      <div className="space-y-2">
+        {own.map((s) => (
+          <div key={s.id} className="border border-stone-200 bg-white px-3 py-2">
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="font-semibold text-stone-900">{s.date}</span>
+              {s.depth_m !== null && s.depth_m !== undefined && <span className="text-stone-600">{fmtNum(s.depth_m, 1)} m</span>}
+              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-stone-100 text-stone-600">{t(`samples.${s.sample_type}`)}</span>
+              {s.visible_gold && <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-100 text-amber-900">{t('samples.visibleGold')}</span>}
+              {canEditPrimary(profile, s) && <button onClick={() => startEdit(s)} className={EDIT_CLS}>{t('edit.edit')}</button>}
+            </div>
+            <div className="text-xs text-stone-700 mt-1 whitespace-pre-wrap">{s.description}</div>
+            <SamplePhotos paths={s.photo_paths} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// A side view of a pit or shaft drawn from the daily entries: each day's digging is a band
+// from the previous depth to the depth reached, coloured by the vein; results and samples are
+// marked at the depth the pit had reached on their date.
+function CrossSection({ shaft, sackCounts, results, samples }) {
+  const { t } = useT();
+  const days = sackCounts.filter((c) => c.shaft_id === shaft.id && c.depth_m !== null && c.depth_m !== undefined && c.depth_m !== '')
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (days.length === 0) return <div className="text-xs text-stone-400 mt-2">{t('section.noDepth')}</div>;
+  const depthOn = (date) => { let d = null; days.forEach((c) => { if (c.date <= date) d = Number(c.depth_m); }); return d; };
+  const maxDepth = Math.max(...days.map((c) => Number(c.depth_m)), 1);
+  const H = 260; const top = 16; const scale = (H - top - 10) / maxDepth; const y = (d) => top + d * scale;
+  const fill = { found: '#EF9F27', lost: '#E8B4B4', not_reached: '#D3D1C7' };
+  // Nothing is known about the ground above the first recorded depth, so it is drawn plain.
+  const firstDepth = Number(days[0].depth_m);
+  let prev = firstDepth;
+  const bands = days.slice(1).map((c) => {
+    const from = Math.min(prev, Number(c.depth_m)); const to = Number(c.depth_m); prev = Math.max(prev, to);
+    return { key: c.id, from, to, vein: c.vein || 'not_reached' };
+  });
+  const marks = results.filter((r) => r.shaft_id === shaft.id && Number(r.sacks_milled) > 0)
+    .map((r) => ({ key: r.id, d: depthOn(r.date), g: r.gold_g / r.sacks_milled })).filter((m) => m.d !== null);
+  const sampleMarks = samples.filter((s) => s.shaft_id === shaft.id && s.depth_m !== null && s.depth_m !== undefined);
+  const ticks = [0, maxDepth / 2, maxDepth];
+  return (
+    <div className="mt-3">
+      <svg viewBox={`0 0 300 ${H}`} className="w-full max-w-md" role="img" aria-label={t('section.crossSection')}>
+        <rect x="0" y={top} width="300" height={H - top} fill="#F1EFE8" />
+        <rect x="0" y={top - 5} width="300" height="5" fill="#97C459" />
+        {ticks.map((d) => (
+          <g key={d}><line x1="30" x2="300" y1={y(d)} y2={y(d)} stroke="#D3D1C7" strokeDasharray="2 3" />
+            <text x="2" y={y(d) + 3} fontSize="9" fill="#888780">{fmtNum(d, 0)} m</text></g>
+        ))}
+        {firstDepth > 0 && <rect x="110" y={y(0)} width="44" height={firstDepth * scale} fill="#FFFFFF" stroke="#B4B2A9" strokeWidth="0.5" strokeDasharray="2 2" />}
+        {bands.map((b) => b.to > b.from && (
+          <rect key={b.key} x="110" y={y(b.from)} width="44" height={Math.max(1, (b.to - b.from) * scale)} fill={fill[b.vein]} stroke="#B4B2A9" strokeWidth="0.5" />
+        ))}
+        {marks.map((m) => (
+          <g key={m.key}><circle cx="164" cy={y(m.d)} r="3" fill={m.g >= 0.4 ? '#1D9E75' : '#888780'} />
+            <text x="170" y={y(m.d) + 3} fontSize="9" fill="#444441">{fmtNum(m.g, 2)} g/sack</text></g>
+        ))}
+        {sampleMarks.map((s) => (
+          <g key={s.id}><rect x="96" y={y(Number(s.depth_m)) - 3} width="6" height="6" fill={s.visible_gold ? '#BA7517' : '#5F5E5A'} />
+            <text x="34" y={y(Number(s.depth_m)) + 3} fontSize="9" fill="#5F5E5A">{t(`samples.${s.sample_type}`)}</text></g>
+        ))}
+      </svg>
+      <div className="text-[10px] text-stone-500 flex flex-wrap gap-3 mt-1">
+        <span><span className="inline-block w-2 h-2 mr-1" style={{ background: fill.found }} />{t('vein.found')}</span>
+        <span><span className="inline-block w-2 h-2 mr-1" style={{ background: fill.lost }} />{t('vein.lost')}</span>
+        <span><span className="inline-block w-2 h-2 mr-1" style={{ background: fill.not_reached }} />{t('vein.not_reached')}</span>
+        <span><span className="inline-block w-2 h-2 mr-1 border border-dashed border-stone-400" />{t('section.beforeEntries')}</span>
+        <span>● {t('section.resultsLegend')}</span><span>■ {t('section.samplesLegend')}</span>
+      </div>
+    </div>
+  );
+}
+
+function Shafts({ site, shafts, sackCounts, results, samples, inputs, profile, onRefresh }) {
+  const { t } = useT();
+  const blank = { name: '', kind: 'shaft', opened_on: todayISO(), start_production: '', closed_on: '', latitude: '', longitude: '', map_link: '', notes: '' };
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(blank);
   const [editing, setEditing] = useState(null);
-  // A quick change from a card: switch to production, or close, from a chosen date.
+  // A quick change from a card: a phase switch or closing, from a chosen date.
   const [quick, setQuick] = useState(null);
+  const [open, setOpen] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const formRef = useRef(null);
   const canAdd = canAddPrimary(profile);
   const cutoff = Number(inputs?.cutoff_g_per_sack);
   const sackTonnes = Number(inputs?.sack_kg) / 1000;
+  const today = todayISO();
   const stats = useMemo(() => Object.fromEntries(shaftStats(shafts, sackCounts, results, cutoff).map((p) => [p.shaft.id, p])),
     [shafts, sackCounts, results, cutoff]);
+  const toggle = (id, part) => setOpen({ ...open, [id]: open[id] === part ? null : part });
 
-  const closeForm = () => {
-    setShowForm(false);
-    setEditing(null);
-    setError('');
-    setForm(blank);
-  };
-
+  const closeForm = () => { setShowForm(false); setEditing(null); setError(''); setForm(blank); };
   const startEdit = (s) => {
-    setError('');
-    setQuick(null);
-    setEditing(s);
+    setError(''); setQuick(null); setEditing(s);
     setForm({
-      name: s.name, kind: s.kind, opened_on: s.opened_on || '', production_from: s.production_from || '',
-      closed_on: s.closed_on || '', notes: s.notes || '',
+      name: s.name, kind: s.kind, opened_on: s.opened_on || '', start_production: '', closed_on: s.closed_on || '',
+      latitude: s.latitude ?? '', longitude: s.longitude ?? '', map_link: s.map_link || '', notes: s.notes || '',
     });
     setShowForm(true);
   };
-
-  useEffect(() => {
-    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [editing]);
+  useEffect(() => { if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [editing]);
 
   // Changes only this one pit or shaft and keeps who originally entered it.
   const update = async (id, changes) => {
-    const { data, error } = await supabase.from('shafts')
-      .update({ ...changes, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select();
-    if (error) { setError(error.message); return false; }
+    const { data, error: err } = await supabase.from('shafts').update({ ...changes, updated_at: new Date().toISOString() }).eq('id', id).select();
+    if (err) { setError(err.message); return false; }
     if (!data || data.length === 0) { setError(t('edit.notSaved')); return false; }
     return true;
   };
+  // production_from keeps the first switch to production, for anything that still reads it.
+  const withHistory = (history) => ({ phase_history: history, production_from: history.find((h) => h.phase === 'production')?.from || null });
 
   const handleSave = async () => {
     setError('');
     const name = form.name.trim();
     if (!name) { setError(t('shafts.nameRequired')); return; }
-    if (shafts.some((s) => s.id !== editing?.id && s.name.trim().toLowerCase() === name.toLowerCase())) {
-      setError(t('shafts.nameTaken'));
-      return;
+    if (shafts.some((s) => s.id !== editing?.id && s.name.trim().toLowerCase() === name.toLowerCase())) { setError(t('shafts.nameTaken')); return; }
+    const lat = form.latitude === '' ? null : Number(form.latitude);
+    const lng = form.longitude === '' ? null : Number(form.longitude);
+    if ((lat !== null && !(lat >= -90 && lat <= 90)) || (lng !== null && !(lng >= -180 && lng <= 180)) || ((lat === null) !== (lng === null))) {
+      setError(t('shafts.badCoords')); return;
     }
     setSaving(true);
     const fields = {
-      name, kind: form.kind, opened_on: form.opened_on || todayISO(),
-      production_from: form.production_from || null, closed_on: form.closed_on || null, notes: form.notes || null,
+      name, kind: form.kind, opened_on: form.opened_on || todayISO(), closed_on: form.closed_on || null,
+      latitude: lat, longitude: lng, map_link: form.map_link.trim() || null, notes: form.notes || null,
     };
     if (editing) {
       const done = await update(editing.id, fields);
       setSaving(false);
       if (!done) return;
     } else {
-      const { error } = await supabase.from('shafts').insert({ ...fields, site_id: site.id, logged_by: profile.id });
+      const history = form.start_production ? [{ phase: 'production', from: form.start_production }] : [];
+      const { error: err } = await supabase.from('shafts').insert({ ...fields, ...withHistory(history), site_id: site.id, logged_by: profile.id });
       setSaving(false);
-      if (error) { setError(error.message); return; }
+      if (err) { setError(err.message); return; }
     }
     closeForm();
     onRefresh();
@@ -1923,8 +2228,11 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
 
   const confirmQuick = async () => {
     setError('');
+    const s = shafts.find((x) => x.id === quick.id);
     setSaving(true);
-    const done = await update(quick.id, { [quick.field]: quick.date });
+    const done = quick.kind === 'close'
+      ? await update(s.id, { closed_on: quick.date })
+      : await update(s.id, withHistory([...phaseHistory(s), { phase: quick.kind, from: quick.date }]));
     setSaving(false);
     if (!done) return;
     setQuick(null);
@@ -1933,16 +2241,13 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
 
   const handleDelete = async () => {
     setError('');
-    // A pit or shaft with sacks or results stays, so every entry keeps its source. It can be closed instead.
-    if (sackCounts.some((c) => c.shaft_id === editing.id) || results.some((r) => r.shaft_id === editing.id)) {
-      setError(t('shafts.hasData'));
-      return;
-    }
+    // A pit or shaft with entries, results or samples stays, so every record keeps its source.
+    if ([sackCounts, results, samples].some((list) => list.some((r) => r.shaft_id === editing.id))) { setError(t('shafts.hasData')); return; }
     if (!window.confirm(`${t('shafts.confirmDelete')}\n${editing.name}`)) return;
     setSaving(true);
-    const { data, error } = await supabase.from('shafts').delete().eq('id', editing.id).select();
+    const { data, error: err } = await supabase.from('shafts').delete().eq('id', editing.id).select();
     setSaving(false);
-    if (error) { setError(['23001', '23503'].includes(error.code) ? t('shafts.hasData') : error.message); return; }
+    if (err) { setError(['23001', '23503'].includes(err.code) ? t('shafts.hasData') : err.message); return; }
     if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
     closeForm();
     onRefresh();
@@ -1956,10 +2261,8 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
           <div className="text-sm text-stone-600">{shafts.length} {t('primary.pitsShafts')}</div>
         </div>
         {canAdd && (
-          <button
-            onClick={() => (showForm ? closeForm() : setShowForm(true))}
-            className="bg-stone-900 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-700 transition-colors"
-          >
+          <button onClick={() => (showForm ? closeForm() : setShowForm(true))}
+            className="bg-stone-900 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-700 transition-colors">
             {showForm ? t('common.cancel') : t('shafts.new')}
           </button>
         )}
@@ -1967,9 +2270,7 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
 
       {showForm && (
         <div ref={formRef} className="bg-white border border-stone-200 p-4 mb-4">
-          {editing && (
-            <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('shafts.editing')} {editing.name}</div>
-          )}
+          {editing && <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('shafts.editing')} {editing.name}</div>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label={t('shafts.name')} value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
             <div>
@@ -1980,32 +2281,35 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
               </select>
             </div>
             <Field label={t('shafts.openedOn')} type="date" value={form.opened_on} onChange={(v) => setForm({ ...form, opened_on: v })} />
-            <Field label={t('shafts.productionFrom')} type="date" value={form.production_from} onChange={(v) => setForm({ ...form, production_from: v })} />
-            {editing && (
-              <Field label={t('shafts.closedOn')} type="date" value={form.closed_on} onChange={(v) => setForm({ ...form, closed_on: v })} />
-            )}
+            {editing
+              ? <Field label={t('shafts.closedOn')} type="date" value={form.closed_on} onChange={(v) => setForm({ ...form, closed_on: v })} />
+              : <Field label={t('shafts.startProduction')} type="date" value={form.start_production} onChange={(v) => setForm({ ...form, start_production: v })} />}
+            <Field label={t('shafts.latitude')} type="number" value={form.latitude} onChange={(v) => setForm({ ...form, latitude: v })} />
+            <Field label={t('shafts.longitude')} type="number" value={form.longitude} onChange={(v) => setForm({ ...form, longitude: v })} />
           </div>
-          <div className="text-[10px] text-stone-500 mt-2">{t('shafts.formHint')}</div>
+          <div className="mt-3"><Field label={t('shafts.mapLink')} value={form.map_link} onChange={(v) => setForm({ ...form, map_link: v })} /></div>
+          <div className="text-[10px] text-stone-500 mt-2">{editing ? t('shafts.editHint') : t('shafts.formHint')}</div>
           <NotesField label={t('shafts.notes')} value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
           <ErrorBox error={error} />
           <div className="flex flex-wrap gap-3 mt-3">
             <button onClick={handleSave} disabled={saving} className={SAVE_CLS}>
               {saving ? t('shafts.saving') : editing ? t('edit.saveChanges') : t('shafts.save')}
             </button>
-            {editing && profile.role === 'super_admin' && (
-              <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>
-            )}
+            {editing && profile.role === 'super_admin' && <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>}
           </div>
         </div>
       )}
       {!showForm && error && <div className="mb-4"><ErrorBox error={error} /></div>}
 
-      {shafts.length === 0 && (
-        <div className="bg-white border border-stone-200 px-3 py-8 text-center text-sm text-stone-400">{t('shafts.none')}</div>
-      )}
+      {shafts.length === 0 && <div className="bg-white border border-stone-200 px-3 py-8 text-center text-sm text-stone-400">{t('shafts.none')}</div>}
       <div className="space-y-2">
         {[...shafts].sort(openFirst).map((s) => {
           const st = stats[s.id];
+          const pr = pitProgress(s.id, sackCounts);
+          const phase = resultPhase(s, today);
+          const link = mapUrl(s);
+          const history = phaseHistory(s);
+          const lostDays = pr.lostSince ? daysBetween(pr.lostSince, today) : 0;
           return (
             <div key={s.id} className="bg-white border border-stone-200 px-4 py-3">
               <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -2013,18 +2317,25 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
                   <span className={`text-sm font-semibold ${s.closed_on ? 'text-stone-500' : 'text-stone-900'}`}>{s.name}</span>
                   <ShaftKindBadge kind={s.kind} />
                 </div>
-                {s.closed_on ? (
-                  <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap bg-stone-100 text-stone-500">
-                    {t('shafts.closed')} {s.closed_on}
-                  </span>
-                ) : s.production_from ? (
-                  <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap bg-emerald-50 text-emerald-700">
-                    {t('shafts.productionSince')} {s.production_from}
-                  </span>
-                ) : (
-                  <PhaseBadge phase="exploration" />
-                )}
+                {s.closed_on
+                  ? <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap bg-stone-100 text-stone-500">{t('shafts.closed')} {s.closed_on}</span>
+                  : <PhaseBadge phase={phase} />}
               </div>
+              {link && (
+                <div className="text-xs mt-1">
+                  {s.latitude !== null && s.latitude !== undefined && <span className="text-stone-500">{s.latitude}, {s.longitude} · </span>}
+                  <a href={link} target="_blank" rel="noreferrer" className="text-amber-700 underline">{t('shafts.openMap')} ↗</a>
+                </div>
+              )}
+              <div className="text-xs text-stone-600 mt-1 flex items-center gap-2 flex-wrap">
+                <span>{t('shafts.depth')} {pr.depth !== null ? `${fmtNum(pr.depth, 1)} m` : '—'}</span>
+                <VeinBadge vein={pr.vein} />
+              </div>
+              {pr.vein === 'lost' && lostDays >= 3 && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 mt-2">
+                  {t('shafts.veinLostFor')} {lostDays} {t('tile.days')} ({t('shafts.since')} {pr.lostSince}).
+                </div>
+              )}
               <div className="text-xs text-stone-600 mt-1">
                 {t('shafts.dug')} {fmtNum(st.dug, 0)} · {t('shafts.milled')} {fmtNum(st.milled, 0)} · {t('shafts.waiting')} {fmtNum(st.waiting, 0)}
               </div>
@@ -2032,6 +2343,11 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
                 {t('shafts.gold')} {fmtNum(st.gold, 1)} g
                 {st.gPerSack !== null && ` · ${fmtNum(st.gPerSack, 2)} g/sack (${fmtNum(st.gPerSack / sackTonnes, 1)} g/t)`}
               </div>
+              {history.length > 0 && (
+                <div className="text-[10px] text-stone-500 mt-1">
+                  {history.map((h) => `${t(`phase.${h.phase}`)} ${t('shafts.from')} ${h.from}`).join(' · ')}
+                </div>
+              )}
               {s.notes && <div className="text-xs text-stone-500 mt-1">{s.notes}</div>}
               {st.ready && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 mt-2">
@@ -2041,35 +2357,35 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
               {canAdd && quick?.id === s.id && (
                 <div className="flex items-end gap-2 mt-2 flex-wrap">
                   <div>
-                    <label className={LABEL_CLS}>{quick.field === 'production_from' ? t('shafts.switchDate') : t('shafts.closeDate')}</label>
+                    <label className={LABEL_CLS}>
+                      {quick.kind === 'close' ? t('shafts.closeDate') : quick.kind === 'production' ? t('shafts.switchDate') : t('shafts.backDate')}
+                    </label>
                     <input type="date" value={quick.date} onChange={(e) => setQuick({ ...quick, date: e.target.value })}
                       className="border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
                   </div>
                   <button onClick={confirmQuick} disabled={saving || !quick.date}
-                    className="bg-amber-700 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">
-                    {t('shafts.confirm')}
-                  </button>
-                  <button onClick={() => setQuick(null)} className="px-4 py-2 text-xs uppercase tracking-widest text-stone-600 border border-stone-300">
-                    {t('common.cancel')}
-                  </button>
+                    className="bg-amber-700 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">{t('shafts.confirm')}</button>
+                  <button onClick={() => setQuick(null)} className="px-4 py-2 text-xs uppercase tracking-widest text-stone-600 border border-stone-300">{t('common.cancel')}</button>
                 </div>
               )}
-              {canAdd && quick?.id !== s.id && (
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  {!s.production_from && !s.closed_on && (
-                    <button onClick={() => { setError(''); setQuick({ id: s.id, field: 'production_from', date: todayISO() }); }}
-                      className={st.ready ? 'px-3 py-1.5 bg-amber-700 text-white text-[10px] uppercase tracking-widest hover:bg-amber-800' : SMALL_CLS}>
-                      {t('shafts.switch')}
-                    </button>
-                  )}
-                  {!s.closed_on && (
-                    <button onClick={() => { setError(''); setQuick({ id: s.id, field: 'closed_on', date: todayISO() }); }} className={SMALL_CLS}>
-                      {t('shafts.close')}
-                    </button>
-                  )}
-                  <button onClick={() => startEdit(s)} className={SMALL_CLS}>{t('edit.edit')}</button>
-                </div>
-              )}
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {canAdd && quick?.id !== s.id && !s.closed_on && (
+                  <button onClick={() => { setError(''); setQuick({ id: s.id, kind: phase === 'production' ? 'exploration' : 'production', date: today }); }}
+                    className={st.ready ? 'px-3 py-1.5 bg-amber-700 text-white text-[10px] uppercase tracking-widest hover:bg-amber-800' : SMALL_CLS}>
+                    {phase === 'production' ? t('shafts.backToExploration') : t('shafts.switch')}
+                  </button>
+                )}
+                {canAdd && quick?.id !== s.id && !s.closed_on && (
+                  <button onClick={() => { setError(''); setQuick({ id: s.id, kind: 'close', date: today }); }} className={SMALL_CLS}>{t('shafts.close')}</button>
+                )}
+                {canAdd && <button onClick={() => startEdit(s)} className={SMALL_CLS}>{t('edit.edit')}</button>}
+                <button onClick={() => toggle(s.id, 'samples')} className={SMALL_CLS}>
+                  {t('samples.title')} ({samples.filter((x) => x.shaft_id === s.id).length})
+                </button>
+                <button onClick={() => toggle(s.id, 'section')} className={SMALL_CLS}>{t('section.crossSection')}</button>
+              </div>
+              {open[s.id] === 'samples' && <SamplesPanel site={site} shaft={s} samples={samples} profile={profile} onRefresh={onRefresh} />}
+              {open[s.id] === 'section' && <CrossSection shaft={s} sackCounts={sackCounts} results={results} samples={samples} />}
             </div>
           );
         })}
@@ -2078,13 +2394,13 @@ function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh 
   );
 }
 
+// Daily entry: one pit or shaft at a time — sacks dug, depth reached and the vein.
 function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
   const { t } = useT();
   const [date, setDate] = useState(todayISO());
-  const [counts, setCounts] = useState({});
-  const [notes, setNotes] = useState('');
+  const [openId, setOpenId] = useState(null);
+  const [form, setForm] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const editRef = useRef(null);
@@ -2092,62 +2408,63 @@ function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
   const shaftById = useMemo(() => Object.fromEntries(shafts.map((s) => [s.id, s])), [shafts]);
   const nameOf = (id) => shaftById[id]?.name || '—';
   const byName = [...shafts].sort((a, b) => a.name.localeCompare(b.name));
-  // A closed pit or shaft takes no sacks after the day it closed.
-  const open = byName.filter((s) => !s.closed_on || date <= s.closed_on);
+  // A closed pit or shaft takes no entries after the day it closed.
+  const openPits = byName.filter((s) => !s.closed_on || date <= s.closed_on);
 
-  const handleSave = async () => {
+  const startEntry = (s) => {
     setError('');
-    const entered = open.filter((s) => counts[s.id] !== undefined && counts[s.id] !== '');
-    if (entered.some((s) => !Number.isInteger(Number(counts[s.id])) || Number(counts[s.id]) < 0)) {
-      setError(t('sacks.whole'));
-      return;
-    }
-    const rows = entered.filter((s) => Number(counts[s.id]) > 0).map((s) => ({
-      site_id: site.id, logged_by: profile.id, shaft_id: s.id, date, sacks: Number(counts[s.id]), notes: notes || null,
-    }));
-    if (rows.length === 0) { setError(t('sacks.enterOne')); return; }
-    // A second count for the same pit or shaft and day (another shift) is allowed, but asked about first.
-    const repeats = rows.filter((r) => sackCounts.some((c) => c.shaft_id === r.shaft_id && c.date === r.date)).map((r) => nameOf(r.shaft_id));
-    if (repeats.length > 0 && !window.confirm(`${t('sacks.confirmSecond')} ${repeats.join(', ')}\n${t('sacks.addAnyway')}`)) return;
+    setEditing(null);
+    setOpenId(s.id);
+    setForm({ sacks: '', depth_m: '', vein: pitProgress(s.id, sackCounts).vein || '', notes: '' });
+  };
+  const startEdit = (c) => {
+    setError('');
+    setOpenId(null);
+    setEditing(c);
+    setForm({ date: c.date, shaft_id: c.shaft_id, sacks: String(c.sacks ?? ''), depth_m: c.depth_m ?? '', vein: c.vein || '', notes: c.notes || '' });
+  };
+  const close = () => { setOpenId(null); setEditing(null); setForm(null); setError(''); };
+  useEffect(() => { if (editing) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [editing]);
+
+  const check = () => {
+    const sacks = Number(form.sacks);
+    if (form.sacks === '' || !Number.isInteger(sacks) || sacks < 0) return t('sacks.whole');
+    if (form.depth_m !== '' && !(Number(form.depth_m) >= 0)) return t('samples.badDepth');
+    return null;
+  };
+  const values = () => ({
+    sacks: Number(form.sacks), depth_m: form.depth_m === '' ? null : Number(form.depth_m),
+    vein: form.vein || null, notes: form.notes || null,
+  });
+
+  const saveEntry = async () => {
+    setError('');
+    const problem = check();
+    if (problem) { setError(problem); return; }
+    // A second entry for the same pit and day (another shift) is allowed, but asked about first.
+    if (sackCounts.some((c) => c.shaft_id === openId && c.date === date)
+      && !window.confirm(`${t('sacks.confirmSecond')} ${nameOf(openId)}\n${t('sacks.addAnyway')}`)) return;
     setSaving(true);
-    const { error } = await supabase.from('sack_counts').insert(rows);
+    const { error: err } = await supabase.from('sack_counts').insert({ ...values(), site_id: site.id, logged_by: profile.id, shaft_id: openId, date });
     setSaving(false);
-    if (error) { setError(error.message); return; }
-    setCounts({});
-    setNotes('');
+    if (err) { setError(err.message); return; }
+    close();
     onRefresh();
   };
 
-  const startEdit = (c) => {
-    setError('');
-    setEditing(c);
-    setEditForm({ date: c.date, shaft_id: c.shaft_id, sacks: String(c.sacks ?? ''), notes: c.notes || '' });
-  };
-
-  const closeEdit = () => {
-    setEditing(null);
-    setEditForm(null);
-    setError('');
-  };
-
-  useEffect(() => {
-    if (editing) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [editing]);
-
-  // An edit changes only this one count and keeps who originally entered it.
+  // An edit changes only this one entry and keeps who originally entered it.
   const saveEdit = async () => {
     setError('');
-    const sacks = Number(editForm.sacks);
-    if (editForm.sacks === '' || !Number.isInteger(sacks) || sacks <= 0) { setError(t('sacks.editPositive')); return; }
+    const problem = check();
+    if (problem) { setError(problem); return; }
     setSaving(true);
-    const { data, error } = await supabase.from('sack_counts')
-      .update({ date: editForm.date, shaft_id: editForm.shaft_id, sacks, notes: editForm.notes || null, updated_at: new Date().toISOString() })
-      .eq('id', editing.id)
-      .select();
+    const { data, error: err } = await supabase.from('sack_counts')
+      .update({ ...values(), date: form.date, shaft_id: form.shaft_id, updated_at: new Date().toISOString() })
+      .eq('id', editing.id).select();
     setSaving(false);
-    if (error) { setError(error.message); return; }
+    if (err) { setError(err.message); return; }
     if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
-    closeEdit();
+    close();
     onRefresh();
   };
 
@@ -2155,75 +2472,99 @@ function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
     if (!window.confirm(`${t('sacks.confirmDelete')}\n${editing.date} · ${nameOf(editing.shaft_id)} · ${editing.sacks}`)) return;
     setError('');
     setSaving(true);
-    const { data, error } = await supabase.from('sack_counts').delete().eq('id', editing.id).select();
+    const { data, error: err } = await supabase.from('sack_counts').delete().eq('id', editing.id).select();
     setSaving(false);
-    if (error) { setError(error.message); return; }
+    if (err) { setError(err.message); return; }
     if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
-    closeEdit();
+    close();
     onRefresh();
   };
+
+  const entryFields = (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={t('sacks.sacks')} type="number" value={form?.sacks ?? ''} onChange={(v) => setForm({ ...form, sacks: v })} />
+        <Field label={t('sacks.depth')} type="number" value={form?.depth_m ?? ''} onChange={(v) => setForm({ ...form, depth_m: v })} />
+      </div>
+      <div className={`${LABEL_CLS} mt-3`}>{t('sacks.vein')}</div>
+      <div className="flex gap-2 flex-wrap">
+        {VEIN_STATES.map((v) => (
+          <button key={v} type="button" onClick={() => setForm({ ...form, vein: form.vein === v ? '' : v })}
+            className={`px-3 py-2 text-xs uppercase tracking-widest border ${form?.vein === v ? `${VEIN_CLS[v]} border-stone-500` : 'border-stone-300 text-stone-600'}`}>
+            {t(`vein.${v}`)}
+          </button>
+        ))}
+      </div>
+      <NotesField label={t('sacks.notes')} value={form?.notes ?? ''} onChange={(v) => setForm({ ...form, notes: v })} />
+      <ErrorBox error={error} />
+    </>
+  );
 
   return (
     <div className="space-y-4">
       <div>
         <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('sacks.title')}</div>
-        <div className="text-sm text-stone-600">
-          {sackCounts.length} {t('sacks.entries')} · {fmtNum(sumOf(sackCounts, 'sacks'), 0)} {t('tile.sacks')}
-        </div>
+        <div className="text-sm text-stone-600">{t('sacks.subtitle')}</div>
       </div>
 
       {canAdd && !editing && (shafts.length === 0 ? (
         <div className="bg-white border border-stone-200 px-4 py-3 text-sm text-stone-500">{t('sacks.noShafts')}</div>
       ) : (
-        <div className="bg-white border border-stone-200 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label={t('sacks.date')} type="date" value={date} onChange={setDate} />
-          </div>
-          <div className={`${LABEL_CLS} mt-4`}>{t('sacks.perShaft')}</div>
-          {open.length === 0 && <div className="text-xs text-stone-500 py-2">{t('sacks.noneOpen')}</div>}
-          <div className="divide-y divide-stone-100">
-            {open.map((s) => (
-              <div key={s.id} className="flex items-center justify-between gap-3 py-2">
-                <div className="flex items-center gap-2 flex-wrap min-w-0">
-                  <span className="text-sm text-stone-900">{s.name}</span>
-                  <PhaseBadge phase={resultPhase(s, date)} />
-                </div>
-                <input type="number" min="0" step="1" inputMode="numeric" placeholder="0"
-                  value={counts[s.id] ?? ''} onChange={(e) => setCounts({ ...counts, [s.id]: e.target.value })}
-                  className="w-24 flex-shrink-0 border border-stone-300 px-3 py-2 text-sm text-right focus:outline-none focus:border-amber-700" />
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label={t('sacks.date')} type="date" value={date} onChange={(v) => { setDate(v); close(); }} /></div>
+          {openPits.length === 0 && <div className="text-xs text-stone-500">{t('sacks.noneOpen')}</div>}
+          {openPits.map((s) => {
+            const done = sackCounts.filter((c) => c.shaft_id === s.id && c.date === date);
+            const last = pitProgress(s.id, sackCounts);
+            return (
+              <div key={s.id} className={`bg-white border ${openId === s.id ? 'border-amber-700' : 'border-stone-200'}`}>
+                <button onClick={() => (openId === s.id ? close() : startEntry(s))} className="w-full text-left px-4 py-3 flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-stone-900">{s.name}</span>
+                    <PhaseBadge phase={resultPhase(s, date)} />
+                  </span>
+                  <span className="text-xs text-right">
+                    {done.length > 0
+                      ? <span className="text-emerald-700">✓ {fmtNum(sumOf(done, 'sacks'), 0)} {t('tile.sacks')}{done[0].depth_m != null ? ` · ${fmtNum(done[0].depth_m, 1)} m` : ''}{done[0].vein ? ` · ${t(`vein.${done[0].vein}`)}` : ''}</span>
+                      : <span className="text-stone-400">{t('sacks.notEntered')}</span>}
+                  </span>
+                </button>
+                {openId === s.id && form && (
+                  <div className="px-4 pb-4 border-t border-stone-100 pt-3">
+                    <div className="text-[10px] text-stone-500 mb-2">
+                      {t('sacks.lastDepth')} {last.depth !== null ? `${fmtNum(last.depth, 1)} m` : '—'}
+                    </div>
+                    {entryFields}
+                    <div className="flex flex-wrap gap-3 mt-3">
+                      <button onClick={saveEntry} disabled={saving} className={SAVE_CLS}>{saving ? t('sacks.saving') : `${t('sacks.saveFor')} ${s.name}`}</button>
+                      <button onClick={close} className={CANCEL_CLS}>{t('common.cancel')}</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-          {open.length < shafts.length && <div className="text-[10px] text-stone-400 mt-1">{t('sacks.closedHidden')}</div>}
-          <NotesField label={t('sacks.notes')} value={notes} onChange={setNotes} />
-          <ErrorBox error={error} />
-          <button onClick={handleSave} disabled={saving} className={`mt-3 ${SAVE_CLS}`}>
-            {saving ? t('sacks.saving') : t('sacks.save')}
-          </button>
+            );
+          })}
+          {openPits.length < shafts.length && <div className="text-[10px] text-stone-400">{t('sacks.closedHidden')}</div>}
         </div>
       ))}
 
-      {editing && (
+      {editing && form && (
         <div ref={editRef} className="bg-white border border-stone-200 p-4">
           <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('sacks.editing')} {editing.date}</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label={t('sacks.date')} type="date" value={editForm.date} onChange={(v) => setEditForm({ ...editForm, date: v })} />
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <Field label={t('sacks.date')} type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
             <div>
               <label className={LABEL_CLS}>{t('sacks.shaft')}</label>
-              <select value={editForm.shaft_id} onChange={(e) => setEditForm({ ...editForm, shaft_id: e.target.value })} className={INPUT_CLS}>
+              <select value={form.shaft_id} onChange={(e) => setForm({ ...form, shaft_id: e.target.value })} className={INPUT_CLS}>
                 {byName.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <Field label={t('sacks.sacks')} type="number" value={editForm.sacks} onChange={(v) => setEditForm({ ...editForm, sacks: v })} />
           </div>
-          <NotesField label={t('sacks.notes')} value={editForm.notes} onChange={(v) => setEditForm({ ...editForm, notes: v })} />
-          <ErrorBox error={error} />
+          {entryFields}
           <div className="flex flex-wrap gap-3 mt-3">
             <button onClick={saveEdit} disabled={saving} className={SAVE_CLS}>{saving ? t('sacks.saving') : t('edit.saveChanges')}</button>
-            {profile.role === 'super_admin' && (
-              <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>
-            )}
-            <button onClick={closeEdit} className={CANCEL_CLS}>{t('common.cancel')}</button>
+            {profile.role === 'super_admin' && <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>}
+            <button onClick={close} className={CANCEL_CLS}>{t('common.cancel')}</button>
           </div>
         </div>
       )}
@@ -2235,23 +2576,23 @@ function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
               <th className="px-3 py-2 text-left">{t('sacks.colDate')}</th>
               <th className="px-3 py-2 text-left">{t('sacks.colShaft')}</th>
               <th className="px-3 py-2 text-right">{t('sacks.colSacks')}</th>
+              <th className="px-3 py-2 text-right">{t('sacks.colDepth')}</th>
+              <th className="px-3 py-2 text-left">{t('sacks.colVein')}</th>
               <th className="px-3 py-2 text-left">{t('sacks.colNotes')}</th>
             </tr>
           </thead>
           <tbody>
-            {sackCounts.length === 0 && (
-              <tr><td colSpan="4" className="px-3 py-8 text-center text-stone-400">{t('sacks.none')}</td></tr>
-            )}
+            {sackCounts.length === 0 && <tr><td colSpan="6" className="px-3 py-8 text-center text-stone-400">{t('sacks.none')}</td></tr>}
             {sackCounts.map((c) => (
               <tr key={c.id} className="border-t border-stone-100">
                 <td className="px-3 py-2 text-stone-900 font-medium whitespace-nowrap">
                   {c.date}
-                  {canEditPrimary(profile, c) && (
-                    <button onClick={() => startEdit(c)} className={EDIT_CLS}>{t('edit.edit')}</button>
-                  )}
+                  {canEditPrimary(profile, c) && <button onClick={() => startEdit(c)} className={EDIT_CLS}>{t('edit.edit')}</button>}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">{nameOf(c.shaft_id)}</td>
                 <td className="px-3 py-2 text-right font-medium">{fmtNum(c.sacks, 0)}</td>
+                <td className="px-3 py-2 text-right">{c.depth_m != null ? fmtNum(c.depth_m, 1) : '—'}</td>
+                <td className="px-3 py-2"><VeinBadge vein={c.vein} /></td>
                 <td className="px-3 py-2 text-stone-500">{c.notes || '—'}</td>
               </tr>
             ))}
@@ -2259,6 +2600,85 @@ function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
         </table>
       </div>
     </div>
+  );
+}
+
+// Dashboard graphs: grams per sack for each pit or shaft, and grade against depth for one of them.
+function PitCharts({ shafts, sackCounts, results, inputs }) {
+  const { t } = useT();
+  const cutoff = Number(inputs?.cutoff_g_per_sack) || 0;
+  const stats = shaftStats(shafts, sackCounts, results, cutoff).filter((p) => p.gPerSack !== null);
+  const [pick, setPick] = useState('');
+  const chosen = shafts.find((s) => s.id === pick) || stats[0]?.shaft;
+  if (stats.length === 0) return null;
+
+  const maxG = Math.max(cutoff, ...stats.map((p) => p.gPerSack)) * 1.15 || 1;
+  const W = 300; const H = 150; const base = H - 22; const barW = Math.min(48, (W - 20) / stats.length - 8);
+  const yG = (g) => base - (g / maxG) * (base - 10);
+
+  // Each result sits at the depth its pit had reached on the result's date.
+  const days = chosen ? sackCounts.filter((c) => c.shaft_id === chosen.id && c.depth_m != null).sort((a, b) => (a.date < b.date ? -1 : 1)) : [];
+  const depthOn = (date) => { let d = null; days.forEach((c) => { if (c.date <= date) d = Number(c.depth_m); }); return d; };
+  const points = chosen ? results.filter((r) => r.shaft_id === chosen.id && Number(r.sacks_milled) > 0)
+    .map((r) => ({ id: r.id, d: depthOn(r.date), g: r.gold_g / r.sacks_milled })).filter((p) => p.d !== null).sort((a, b) => a.d - b.d) : [];
+  // The depth axis covers this pit's own range, so the points spread across the chart.
+  const minD = points.length ? Math.min(...points.map((p) => p.d)) : 0;
+  const maxD = Math.max(minD + 1, ...points.map((p) => p.d));
+  const maxPG = Math.max(cutoff, ...points.map((p) => p.g), 0.1) * 1.15;
+  const px = (d) => 40 + ((d - minD) / (maxD - minD)) * (W - 70);
+  const py = (g) => base - (g / maxPG) * (base - 10);
+
+  return (
+    <>
+      <Section title={t('chart.pitComparison')}>
+        <div className="bg-white border border-stone-200 p-3">
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-lg" role="img" aria-label={t('chart.pitComparison')}>
+            <line x1="0" x2={W} y1={yG(cutoff)} y2={yG(cutoff)} stroke="#BA7517" strokeDasharray="4 3" />
+            <text x={W - 2} y={yG(cutoff) - 3} fontSize="9" textAnchor="end" fill="#BA7517">{t('chart.cutoff')} {fmtNum(cutoff, 2)}</text>
+            {stats.map((p, i) => {
+              const x = 10 + i * (barW + 8);
+              const prod = resultPhase(p.shaft, todayISO()) === 'production';
+              return (
+                <g key={p.shaft.id}>
+                  <rect x={x} y={yG(p.gPerSack)} width={barW} height={base - yG(p.gPerSack)} fill={prod ? '#1D9E75' : '#378ADD'} />
+                  <text x={x + barW / 2} y={yG(p.gPerSack) - 3} fontSize="9" textAnchor="middle" fill="#444441">{fmtNum(p.gPerSack, 2)}</text>
+                  <text x={x + barW / 2} y={H - 8} fontSize="9" textAnchor="middle" fill="#5F5E5A">{p.shaft.name}</text>
+                </g>
+              );
+            })}
+          </svg>
+          <div className="text-[10px] text-stone-500 flex gap-3 mt-1">
+            <span><span className="inline-block w-2 h-2 mr-1" style={{ background: '#1D9E75' }} />{t('phase.production')}</span>
+            <span><span className="inline-block w-2 h-2 mr-1" style={{ background: '#378ADD' }} />{t('phase.exploration')}</span>
+            <span>g/sack</span>
+          </div>
+        </div>
+      </Section>
+      <Section title={t('chart.depthGrade')}>
+        <div className="bg-white border border-stone-200 p-3">
+          <select value={chosen?.id || ''} onChange={(e) => setPick(e.target.value)} className="border border-stone-300 px-2 py-1 text-xs mb-2">
+            {shafts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {points.length === 0 ? (
+            <div className="text-xs text-stone-400 py-4">{t('chart.noDepthResults')}</div>
+          ) : (
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-lg" role="img" aria-label={t('chart.depthGrade')}>
+              <line x1="30" x2={W} y1={py(cutoff)} y2={py(cutoff)} stroke="#BA7517" strokeDasharray="4 3" />
+              <line x1="30" x2="30" y1="5" y2={base} stroke="#D3D1C7" />
+              <line x1="30" x2={W} y1={base} y2={base} stroke="#D3D1C7" />
+              <polyline points={points.map((p) => `${px(p.d)},${py(p.g)}`).join(' ')} fill="none" stroke="#1D9E75" strokeWidth="1.5" />
+              {points.map((p) => (
+                <g key={p.id}><circle cx={px(p.d)} cy={py(p.g)} r="3" fill="#1D9E75" />
+                  <text x={px(p.d)} y={py(p.g) - 6} fontSize="9" textAnchor="middle" fill="#444441">{fmtNum(p.g, 2)}</text></g>
+              ))}
+              <text x="30" y={H - 6} fontSize="9" fill="#888780">{fmtNum(minD, 1)} m</text>
+              <text x={W} y={H - 6} fontSize="9" textAnchor="end" fill="#888780">{fmtNum(maxD, 1)} m</text>
+              <text x="2" y="12" fontSize="9" fill="#888780">g/sack</text>
+            </svg>
+          )}
+        </div>
+      </Section>
+    </>
   );
 }
 
@@ -3596,6 +4016,7 @@ export default function App() {
   const [sackCounts, setSackCounts] = useState([]);
   const [millingResults, setMillingResults] = useState([]);
   const [excavatorLogs, setExcavatorLogs] = useState([]);
+  const [samples, setSamples] = useState([]);
   const [page, setPage] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState('');
@@ -3671,7 +4092,7 @@ export default function App() {
   const refreshSiteData = async () => {
     if (!site) return;
     const primary = isPrimarySite(site);
-    const [inputsR, logsR, txR, shaftsR, sacksR, resultsR, excavatorR] = await Promise.all([
+    const [inputsR, logsR, txR, shaftsR, sacksR, resultsR, excavatorR, samplesR] = await Promise.all([
       supabase.from('inputs').select('*').eq('site_id', site.id).maybeSingle(),
       supabase.from('daily_logs').select('*').eq('site_id', site.id).order('date', { ascending: false }),
       supabase.from('transactions').select('*').eq('site_id', site.id).order('date', { ascending: false }),
@@ -3681,6 +4102,7 @@ export default function App() {
         supabase.from('sack_counts').select('*').eq('site_id', site.id).order('date', { ascending: false }),
         supabase.from('milling_results').select('*').eq('site_id', site.id).order('date', { ascending: false }),
         supabase.from('excavator_logs').select('*').eq('site_id', site.id).order('date', { ascending: false }),
+        supabase.from('shaft_samples').select('*').eq('site_id', site.id).order('date', { ascending: false }),
       ] : []),
     ]);
     setInputs(inputsR.data);
@@ -3690,6 +4112,7 @@ export default function App() {
     setSackCounts(sacksR?.data || []);
     setMillingResults(resultsR?.data || []);
     setExcavatorLogs(excavatorR?.data || []);
+    setSamples(samplesR?.data || []);
   };
 
   useEffect(() => { refreshSiteData(); }, [site]);
@@ -3781,7 +4204,7 @@ export default function App() {
         )}
         {page === 'daily' && !primary && <DailyLogs site={site} logs={logs} profile={profile} onRefresh={refreshSiteData} />}
         {page === 'shafts' && primary && (
-          <Shafts site={site} shafts={shafts} sackCounts={sackCounts} results={millingResults} inputs={inputs}
+          <Shafts site={site} shafts={shafts} sackCounts={sackCounts} results={millingResults} samples={samples} inputs={inputs}
             profile={profile} onRefresh={refreshSiteData} />
         )}
         {page === 'sacks' && primary && (

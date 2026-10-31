@@ -68,7 +68,7 @@ Core tables:
 - `transactions` — financial register: every ETB in/out
 - `rotation` — bi-weekly operational rotation (per partnership agreement)
 - `audit_log` — change tracking for transparency
-- `shafts`, `sack_counts`, `milling_results`, `excavator_logs` — primary sites only: pits and shafts, sacks dug per day, sacks milled and gold recovered, excavator hours and fuel (`sites.site_type` is `alluvial` or `primary`)
+- `shafts`, `sack_counts`, `milling_results`, `excavator_logs`, `shaft_samples` — primary sites only: pits and shafts (location, phase history), daily sacks with depth and vein, sacks milled and gold recovered, excavator hours and fuel, dated rock samples with photos (Storage bucket `samples`) (`sites.site_type` is `alluvial` or `primary`)
 
 **Row-Level Security:** Enforces at the database level. Super admin sees all. Site managers / leads see only their site. Partners see only their assigned sites.
 
@@ -107,7 +107,7 @@ and fuel used:
 ```
 Gross Gold = sum of gold_g in milling results (exploration and production)
 Landowner Gold = Gross Gold × landowner_share;  Investors' Gold = Net Saleable Gold
-Production gold = results dated on or after their pit/shaft's production_from; the rest is exploration
+A result's phase = the pit/shaft's phase on the result's date (from its phase_history of switches)
 Sacks Waiting = sacks dug (sack_counts) - sacks milled (milling_results)
 Grams per Sack = Gross Gold / sacks milled;  g/t = grams per sack / (sack_kg / 1000)
 Cost per Sack = Total Costs / sacks milled
