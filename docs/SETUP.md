@@ -100,8 +100,17 @@ and excavator days. A site manager can change only their own entries (and any pi
 at their site, to switch or close it). Only the super admin can delete. Financial leads add
 statement entries only; partners can only look. The database enforces all of this.
 
-Telegram reports are not built for primary sites yet, so the Telegram section is hidden in
-their Inputs. Cloning is not offered for primary sites.
+Cloning is not offered for primary sites.
+
+Telegram for primary sites: connect a channel in Inputs → Telegram Reports, as for alluvial
+sites (see "Telegram reports" below; also run `docs/migrations/008_telegram_primary.sql`).
+A day's report is posted 30 minutes after its Daily Entry is saved. The bot works out every
+figure with the app's own calculations, then Claude (Anthropic's AI, model `claude-opus-5-5`)
+writes a short plain-English report from those figures only; the exact figures follow as
+tables, and each sample's photos are posted after the report with its description. For the
+AI, create an API key at console.anthropic.com and add it in Supabase → Edge Functions →
+Secrets as `ANTHROPIC_API_KEY` (never in the code). Without the key, or if the AI fails, the
+figures are posted alone, so a report is never lost. Each report costs a few US cents.
 
 ## Telegram reports
 

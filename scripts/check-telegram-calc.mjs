@@ -9,12 +9,17 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf
 const app = read('src/App.jsx');
 const bot = read('supabase/functions/telegram-reports/index.ts');
 
-// A top-level `const name = ...` or `function name(...)` up to its closing brace at column 0.
-const grab = (src, name) =>
-  src.match(new RegExp(`^(?:const ${name} = |function ${name}\\()[\\s\\S]*?^\\};?$`, 'm'))?.[0];
+// A top-level `const name = ...` or `function name(...)` up to its closing brace at column 0,
+// or the whole line when the definition fits on one line.
+const grab = (src, name) => {
+  const line = src.match(new RegExp(`^const ${name} = .*;$`, 'm'))?.[0];
+  if (line && !line.endsWith('{') && !line.endsWith('=> {')) return line;
+  return src.match(new RegExp(`^(?:const ${name} = |function ${name}\\()[\\s\\S]*?^\\};?$`, 'm'))?.[0];
+};
 
 let ok = true;
-for (const name of ['weekStart', 'addDays', 'fmtETB', 'fmtNum', 'fmtBarrels', 'weeklySnap']) {
+for (const name of ['weekStart', 'addDays', 'fmtETB', 'fmtNum', 'fmtBarrels', 'weeklySnap',
+  'phaseHistory', 'resultPhase', 'pitProgress', 'sumOf', 'byNewest', 'shaftStats', 'primarySnap', 'daysBetween']) {
   const inApp = grab(app, name);
   const inBot = grab(bot, name);
   if (inApp && inApp === inBot) {

@@ -540,6 +540,7 @@ const EN_STRINGS = {
   'hist.f.cleaning_fuel_rate': 'Cleaning Fuel Rate', 'hist.f.prep_fuel_rate': 'Prep Fuel Rate',
   // Telegram reports
   'tg.title': 'Telegram Reports',
+  'tg.subtitlePrimary': "Each day's report is posted to this site's Telegram channel 30 minutes after that day's Daily Entry is saved, or at 9 am the next morning saying the entry is missing. The bot works out the figures and Claude (AI) writes them up in plain words above the exact figures; the day's sample photos follow with their descriptions. A weekly summary follows on Sundays at 8 pm. Corrected entries update their report and post a notice.",
   'tg.subtitle': "Each day's report is posted to this site's Telegram channel 30 minutes after that day's log is saved. If a day still has no log by 9 am the next morning (Ethiopia time), a report saying the log is missing is posted. A weekly summary follows on Sundays at 8 pm. If a day that was already posted is corrected later, its report is updated and a correction notice is posted.",
   'tg.sendPast': 'Send past reports', 'tg.posting': 'Posting…',
   'tg.confirmPast': 'Post all past reports to the channel? It takes a few seconds per report. Keep this page open until it finishes.',
@@ -3681,8 +3682,7 @@ function Inputs({ site, inputs, profile, onRefresh }) {
         {saving ? t('inputs.saving') : t('inputs.saveAll')}
       </button>
 
-      {/* Telegram reports are not built for primary sites yet, so a channel can't be connected to one. */}
-      {!primary && <TelegramSettings site={site} profile={profile} />}
+      <TelegramSettings site={site} profile={profile} />
     </div>
   );
 }
@@ -3692,7 +3692,7 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 // ============================================================
 // The bot runs in Supabase and is deployed by hand, so it can fall behind the app.
 // scripts/check-telegram-calc.mjs keeps this equal to BOT_VERSION in the bot's code.
-const TELEGRAM_BOT_VERSION = 'eee2a2a9ee';
+const TELEGRAM_BOT_VERSION = 'fcd1c55df1';
 const TELEGRAM_BOT_FILE = 'https://github.com/Semegn/armada-mining/blob/main/supabase/functions/telegram-reports/index.ts';
 
 function TelegramSettings({ site, profile }) {
@@ -3787,7 +3787,7 @@ function TelegramSettings({ site, profile }) {
     <div className="bg-white border border-stone-200">
       <div className="bg-stone-100 px-4 py-2 text-[10px] uppercase tracking-widest text-stone-600 font-semibold">{t('tg.title')}</div>
       <div className="p-4 space-y-3 text-sm">
-        <div className="text-stone-600">{t('tg.subtitle')}</div>
+        <div className="text-stone-600">{t(isPrimarySite(site) ? 'tg.subtitlePrimary' : 'tg.subtitle')}</div>
         {demo ? (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2">{t('tg.demoNote')}</div>
         ) : (

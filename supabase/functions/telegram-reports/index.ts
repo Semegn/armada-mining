@@ -3,7 +3,10 @@
 // after it's saved, or at 9 am the next morning at the latest) and the weekly summary
 // (Sundays 20:05) to the Telegram channel connected to that site, can post the past
 // reports, and updates a posted report when its day's entries change.
-// Setup and deployment: docs/SETUP.md. Database: docs/migrations/003, 004 and 005.
+// Primary (hard-rock) sites get their own reports: the bot works out the figures, Claude
+// (Anthropic) writes them up in plain words, the exact key figures follow as a table, and
+// the day's sample photos are posted after it. Without the AI the figures are posted alone.
+// Setup and deployment: docs/SETUP.md. Database: docs/migrations/003, 004, 005 and 008.
 //
 // Actions (POST, JSON body):
 //   { action: 'run', kind }                       pg_cron; needs the x-cron-secret header.
@@ -13,11 +16,14 @@
 //   { action: 'send_test', site_id }              super admin: posts today's report now (not archived)
 //   { action: 'backfill', site_id }               super admin: posts the next batch of past reports
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import Anthropic from 'npm:@anthropic-ai/sdk';
 
 const db = createClient(Deno.env.get('SUPABASE_URL'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') || '';
+const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') || '';
+const AI_MODEL = 'claude-opus-5-5';
 const TIME_ZONE = 'Africa/Addis_Ababa';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -31,7 +37,7 @@ const SETTLE_MINUTES = 30;          // post a day's report this long after its d
 const AUTO_POST_DAYS = 3;           // only logs from the last few days are posted automatically
 // The app compares this with its TELEGRAM_BOT_VERSION to warn when this bot needs redeploying.
 // scripts/check-telegram-calc.mjs says what it must be after any change to this file.
-const BOT_VERSION = 'eee2a2a9ee';
+const BOT_VERSION = 'fcd1c55df1';
 
 // ---- Copied verbatim from src/App.jsx so the reports match the app exactly. ----
 // ---- Do not edit here. After changing them in App.jsx, copy them again and run ----
@@ -122,6 +128,129 @@ function weeklySnap(inputs, logs, transactions, selectedWeek) {
     logCount: snapLogs.length, txCount: snapTxs.length,
   };
 }
+// ---- End of copied code. ----
+
+// The copied primary-site code below asks for "today"; for the bot that is today in Ethiopia.
+const todayISO = () => todayInEthiopia();
+
+// ---- Also copied verbatim from src/App.jsx (primary sites); same rule as above. ----
+// The exploration/production switches of a pit or shaft, oldest first. Older rows that only
+// have production_from count as one switch to production on that date.
+const phaseHistory = (shaft) => {
+  const h = Array.isArray(shaft?.phase_history) ? shaft.phase_history : [];
+  if (h.length > 0) return [...h].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  return shaft?.production_from ? [{ phase: 'production', from: shaft.production_from }] : [];
+};
+// A result has the phase its pit or shaft was in on the result's date.
+const resultPhase = (shaft, date) => phaseHistory(shaft).reduce((p, c) => (date >= c.from ? c.phase : p), 'exploration');
+const VEIN_STATES = ['found', 'lost', 'not_reached'];
+// Latest depth and vein from the daily entries, and how many days the vein has been lost.
+const pitProgress = (shaftId, sackCounts) => {
+  const own = sackCounts.filter((c) => c.shaft_id === shaftId).sort(byNewest);
+  const withDepth = own.find((c) => c.depth_m !== null && c.depth_m !== undefined && c.depth_m !== '');
+  const withVein = own.find((c) => c.vein);
+  const lastFound = own.find((c) => c.vein === 'found');
+  const lostSince = withVein?.vein === 'lost'
+    ? own.filter((c) => c.vein === 'lost' && (!lastFound || c.date > lastFound.date)).map((c) => c.date).sort()[0]
+    : null;
+  return { depth: withDepth ? Number(withDepth.depth_m) : null, vein: withVein?.vein || null, lostSince };
+};
+const sumOf = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+const byNewest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+const openFirst = (a, b) => (Number(!!a.closed_on) - Number(!!b.closed_on)) || a.name.localeCompare(b.name);
+const EXCAVATOR_FIELDS = ['exploration_hrs', 'production_hrs', 'idle_hrs', 'excavator_fuel_barrels', 'mill_fuel_barrels'];
+
+// Sacks, gold and readiness for production, per pit or shaft.
+function shaftStats(shafts, sackCounts, results, cutoff) {
+  return shafts.map((s) => {
+    const own = results.filter((r) => r.shaft_id === s.id);
+    const dug = sumOf(sackCounts.filter((c) => c.shaft_id === s.id), 'sacks');
+    const milled = sumOf(own, 'sacks_milled');
+    const gold = sumOf(own, 'gold_g');
+    // Readiness looks at the last 3 results, so one lucky sack doesn't decide it.
+    const last3 = [...own].sort(byNewest).slice(0, 3);
+    const last3Sacks = sumOf(last3, 'sacks_milled');
+    const last3Gps = last3Sacks > 0 ? sumOf(last3, 'gold_g') / last3Sacks : 0;
+    return {
+      shaft: s, dug, milled, waiting: dug - milled, gold,
+      gPerSack: milled > 0 ? gold / milled : null,
+      last3Gps,
+      ready: resultPhase(s, todayISO()) === 'exploration' && !s.closed_on && last3.length === 3 && last3Gps >= cutoff,
+    };
+  });
+}
+
+function primarySnap(inputs, shafts, sackCounts, results, excavatorLogs, transactions) {
+  if (!inputs) return null;
+  const excavatorOn = !!inputs.excavator_on;
+
+  // Gold, money, fuel and machine hours come from weeklySnap, the formulas the alluvial sites use.
+  // Milling results carry the gold; excavator days carry the hours and fuel used, in the fields weeklySnap reads.
+  const rows = [
+    ...results.map((r) => ({ date: r.date, gold_g: r.gold_g })),
+    ...excavatorLogs.map((l) => ({
+      date: l.date, cleaning_hrs: l.exploration_hrs, prep_hrs: l.production_hrs, idle_hrs: l.idle_hrs,
+      fuel_received_barrels: (Number(l.excavator_fuel_barrels) || 0) + (Number(l.mill_fuel_barrels) || 0),
+    })),
+  ];
+  const latest = (list) => list.map((r) => r.date).filter(Boolean).reduce((a, b) => (a > b ? a : b), '');
+  const lastEntryDate = latest([...rows, ...sackCounts]);
+  // weeklySnap counts everything dated up to 6 days after the date it gets, so the latest date counts it all.
+  const snap = weeklySnap(inputs, rows, transactions, latest([...rows, ...sackCounts, ...transactions]) || todayISO());
+
+  const perShaft = shaftStats(shafts, sackCounts, results, Number(inputs.cutoff_g_per_sack));
+  const shaftById = Object.fromEntries(shafts.map((s) => [s.id, s]));
+  let explorationGold = 0;
+  let productionGold = 0;
+  results.forEach((r) => {
+    if (resultPhase(shaftById[r.shaft_id], r.date) === 'production') productionGold += Number(r.gold_g) || 0;
+    else explorationGold += Number(r.gold_g) || 0;
+  });
+  const source = (kind) => {
+    const list = perShaft.filter((p) => p.shaft.kind === kind);
+    return { count: list.length, dug: sumOf(list, 'dug'), milled: sumOf(list, 'milled'), gold: sumOf(list, 'gold') };
+  };
+
+  const sacksDug = sumOf(sackCounts, 'sacks');
+  const sacksMilled = sumOf(results, 'sacks_milled');
+  const gPerSack = sacksMilled > 0 ? snap.grossGold / sacksMilled : 0;
+  const sackTonnes = Number(inputs.sack_kg) / 1000;
+
+  // Days left use the last 7 excavator days, as the alluvial Dashboard does with its logs.
+  const perDay = {};
+  excavatorLogs.forEach((l) => {
+    const d = perDay[l.date] || (perDay[l.date] = { fuel: 0, hrs: 0 });
+    d.fuel += (Number(l.excavator_fuel_barrels) || 0) + (Number(l.mill_fuel_barrels) || 0);
+    d.hrs += (Number(l.exploration_hrs) || 0) + (Number(l.production_hrs) || 0);
+  });
+  const last7 = Object.keys(perDay).sort().reverse().slice(0, 7).map((d) => perDay[d]);
+  const avgDailyFuel = last7.length > 0 ? sumOf(last7, 'fuel') / last7.length : 0;
+  const avgDailyHrs = last7.length > 0 ? sumOf(last7, 'hrs') / last7.length : 0;
+
+  // Without an excavator there is no fuel or machine-hour stock to watch: cash and profit only.
+  let { status, reasons } = snap;
+  if (!excavatorOn) {
+    const lowCash = snap.cashOnHand < Number(inputs.target_cash_reserve);
+    reasons = [...(lowCash ? ['Cash'] : []), ...(snap.profit < 0 ? ['Profit'] : [])];
+    status = snap.profit < 0 ? 'critical' : lowCash ? 'caution' : 'healthy';
+  }
+
+  return {
+    ...snap, status, reasons, excavatorOn, lastEntryDate,
+    landownerGold: snap.grossGold - snap.netSaleableGold,
+    explorationGold, productionGold,
+    sacksDug, sacksMilled, sacksWaiting: sacksDug - sacksMilled,
+    gPerSack, gPerTonne: sackTonnes > 0 ? gPerSack / sackTonnes : 0,
+    costPerSack: sacksMilled > 0 ? snap.totalCosts / sacksMilled : 0,
+    perShaft, pits: source('pit'), handDug: source('shaft'),
+    explorationHrs: sumOf(excavatorLogs, 'exploration_hrs'),
+    productionHrs: sumOf(excavatorLogs, 'production_hrs'),
+    idleHrs: sumOf(excavatorLogs, 'idle_hrs'),
+    fuelRunwayDays: avgDailyFuel > 0 ? snap.fuelRemainingBarrels / avgDailyFuel : null,
+    machineRunwayDays: avgDailyHrs > 0 ? snap.machineHrsRemaining / avgDailyHrs : null,
+  };
+}
+const daysBetween = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000);
 // ---- End of copied code. ----
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -255,6 +384,220 @@ function weeklyBlocks({ site, inputs, logs, txs }, monday) {
   ];
 }
 
+// ---------- Primary sites: figures, AI write-up and sample photos ----------
+
+const VEIN_WORDS = { found: 'vein found', lost: 'vein lost', not_reached: 'not reached' };
+const SAMPLE_WORDS = { quartz: 'Quartz', stone: 'Stone', other: 'Other' };
+const round = (n, d = 2) => (n === null || n === undefined || !Number.isFinite(Number(n)) ? null : Number(Number(n).toFixed(d)));
+const datedUpTo = (rows, day) => rows.filter((r) => r.date <= day);
+const datedIn = (rows, from, to) => rows.filter((r) => r.date >= from && r.date <= to);
+const isOpenOn = (s, day) => (!s.opened_on || s.opened_on <= day) && (!s.closed_on || s.closed_on > day);
+const pitLine = (name, text) => `${String(name).slice(0, 12).padEnd(13)}${text}`;
+
+// The position at the end of `day`: the app's primary snapshot of everything dated up to it.
+const primaryEndOf = (data, day) => primarySnap(data.inputs, data.shafts, datedUpTo(data.sacks, day),
+  datedUpTo(data.results, day), datedUpTo(data.exc, day), datedUpTo(data.txs, day));
+
+// Everything the write-up may use. Claude gets these facts and nothing else.
+function primaryFacts(data, from, to) {
+  const { site, inputs, shafts, sacks, results, exc, samples, txs } = data;
+  const snap = primaryEndOf(data, to);
+  const nameOf = Object.fromEntries(shafts.map((s) => [s.id, s.name]));
+  const shaftOf = Object.fromEntries(shafts.map((s) => [s.id, s]));
+  const statsOf = Object.fromEntries(snap.perShaft.map((p) => [p.shaft.id, p]));
+  const soFar = datedUpTo(sacks, to);
+  const pits = shafts.filter((s) => isOpenOn(s, to) || datedIn(sacks, from, to).some((c) => c.shaft_id === s.id))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => {
+      const entries = datedIn(sacks, from, to).filter((c) => c.shaft_id === s.id);
+      const progress = pitProgress(s.id, soFar);
+      const st = statsOf[s.id];
+      return {
+        name: s.name, kind: s.kind === 'pit' ? 'excavator pit' : 'hand-dug shaft', phase: resultPhase(s, to),
+        closed: !!s.closed_on && s.closed_on <= to,
+        sacks_in_period: entries.length > 0 ? sumOf(entries, 'sacks') : null,
+        depth_m: progress.depth, vein: progress.vein,
+        vein_lost_days: progress.lostSince ? daysBetween(progress.lostSince, to) : 0,
+        grams_per_sack_to_date: round(st?.gPerSack), grams_per_sack_last_3_results: round(st?.last3Gps),
+        ready_for_production: !!st?.ready, sacks_waiting_to_mill: st?.waiting ?? 0,
+        entry_notes: entries.map((c) => c.notes).filter(Boolean),
+      };
+    });
+  const excRows = datedIn(exc, from, to);
+  return {
+    site: site.name, period: from === to ? { day: to } : { from, to },
+    status: snap.status, status_reasons: snap.reasons,
+    cutoff_grams_per_sack: Number(inputs.cutoff_g_per_sack), sack_kg: Number(inputs.sack_kg),
+    landowner_share: Number(inputs.landowner_share),
+    pits_and_shafts: pits,
+    milling_results: datedIn(results, from, to).map((r) => ({
+      date: r.date, pit: nameOf[r.shaft_id], sacks_milled: Number(r.sacks_milled), gold_g: Number(r.gold_g),
+      grams_per_sack: round(Number(r.gold_g) / Number(r.sacks_milled)), phase: resultPhase(shaftOf[r.shaft_id], r.date),
+      notes: r.notes || null,
+    })),
+    excavator: snap.excavatorOn ? {
+      exploration_hrs: sumOf(excRows, 'exploration_hrs'), production_hrs: sumOf(excRows, 'production_hrs'),
+      idle_hrs: sumOf(excRows, 'idle_hrs'), excavator_fuel_barrels: sumOf(excRows, 'excavator_fuel_barrels'),
+      mill_fuel_barrels: sumOf(excRows, 'mill_fuel_barrels'), notes: excRows.map((l) => l.notes).filter(Boolean),
+    } : null,
+    samples: datedIn(samples, from, to).map((x) => ({
+      date: x.date, pit: nameOf[x.shaft_id], type: x.sample_type, depth_m: x.depth_m === null ? null : Number(x.depth_m),
+      visible_gold: !!x.visible_gold, description: x.description, photos: (x.photo_paths || []).length,
+    })),
+    statement_entries: datedIn(txs, from, to).map((t) => ({
+      date: t.date, type: t.type, category: t.category, amount_etb: Number(t.amount), notes: t.notes || null,
+    })),
+    finance_to_date: {
+      cash_on_hand_etb: Math.round(snap.cashOnHand), target_cash_reserve_etb: Number(inputs.target_cash_reserve),
+      gold_on_hand_g: round(snap.goldOnHand, 1), gold_sold_g: round(snap.goldSold, 1),
+      landowner_gold_g: round(snap.landownerGold, 1), investors_gold_g: round(snap.netSaleableGold, 1),
+      revenue_etb: Math.round(snap.goldSaleRevenue), operating_costs_etb: Math.round(snap.totalCosts),
+      net_profit_etb: Math.round(snap.profit), cost_per_sack_milled_etb: Math.round(snap.costPerSack),
+      ...(snap.excavatorOn ? {
+        fuel_left_barrels: round(snap.fuelRemainingBarrels, 1), fuel_days_left: round(snap.fuelRunwayDays, 0),
+        machine_hours_left: round(snap.machineHrsRemaining, 0), machine_days_left: round(snap.machineRunwayDays, 0),
+      } : {}),
+    },
+    geology_to_date: {
+      gold_total_g: round(snap.grossGold, 1), gold_exploration_g: round(snap.explorationGold, 1),
+      gold_production_g: round(snap.productionGold, 1), grams_per_sack: round(snap.gPerSack),
+      grams_per_tonne: round(snap.gPerTonne, 1), sacks_dug: snap.sacksDug, sacks_milled: snap.sacksMilled,
+      sacks_waiting: snap.sacksWaiting,
+    },
+  };
+}
+
+// The exact figures, posted under the write-up (or alone when the AI is not available).
+function primaryFigureBlocks(data, from, to, title) {
+  const { site, inputs } = data;
+  const snap = primaryEndOf(data, to);
+  const f = primaryFacts(data, from, to);
+  const blocks = [
+    `${STATUS_DOT[snap.status]} <b>${escapeHtml(site.name.toUpperCase())}</b> · ${title}\n` +
+      `<b>${from === to ? prettyDate(to) : `${prettyDate(from)} – ${prettyDate(to)}`}</b> · ${escapeHtml(statusText(snap))}`,
+  ];
+  const dug = f.pits_and_shafts.filter((p) => p.sacks_in_period !== null);
+  if (from === to && dug.length === 0) blocks.push('<b>DAILY ENTRY</b>\n⚠ No daily entry for this day.');
+  if (f.pits_and_shafts.length > 0) {
+    blocks.push(`<b>PITS & SHAFTS</b>\n<pre>${escapeHtml(f.pits_and_shafts.map((p) => pitLine(p.name,
+      `${p.sacks_in_period === null ? '–' : plain(p.sacks_in_period)} sk · ${p.depth_m === null ? '–' : plain(p.depth_m)} m · ` +
+      `${p.vein ? VEIN_WORDS[p.vein] : '–'}${p.vein_lost_days >= 3 ? ' ⚠' : ''}${p.ready_for_production ? ' ⭐' : ''}`)).join('\n'))}</pre>`);
+  }
+  if (f.milling_results.length > 0) {
+    blocks.push(`<b>RESULTS</b>\n<pre>${escapeHtml(f.milling_results.map((r) => pitLine(r.pit,
+      `${plain(r.gold_g)} g / ${plain(r.sacks_milled)} sk = ${plain(r.grams_per_sack)} g/sk${r.phase === 'production' ? ' (prod)' : ''}`)).join('\n'))}</pre>`);
+  }
+  if (f.excavator) {
+    const e = f.excavator;
+    blocks.push(table('EXCAVATOR', [
+      row('Expl / prod', `${plain(e.exploration_hrs)} / ${plain(e.production_hrs)}`, 'hrs'),
+      row('Idle', plain(e.idle_hrs), 'hrs'),
+      row('Fuel exc / mill', `${plain(e.excavator_fuel_barrels)} / ${plain(e.mill_fuel_barrels)}`, 'bbl'),
+    ]));
+  }
+  if (from === to) {
+    const entries = datedIn(data.txs, from, to).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    if (entries.length === 0) blocks.push('<b>STATEMENT</b>\nNo entries.');
+    entries.forEach((t, i) => blocks.push(...withNote(`${i === 0 ? '<b>STATEMENT</b>\n' : ''}${txHead(t)}`, t.notes)));
+  }
+  blocks.push(table('FINANCE · to date', [
+    row('Cash on hand', fmtETB(snap.cashOnHand), 'ETB', snap.cashOnHand < Number(inputs.target_cash_reserve)),
+    row('Gold on hand', fmtNum(snap.goldOnHand, 1), 'g'),
+    row('Landowner', fmtNum(snap.landownerGold, 1), 'g'),
+    row('Investors', fmtNum(snap.netSaleableGold, 1), 'g'),
+    row('Costs', fmtETB(snap.totalCosts), 'ETB'),
+    row('Net profit', fmtETB(snap.profit), 'ETB', snap.profit < 0),
+    ...(snap.excavatorOn ? [
+      row('Fuel left', fmtBarrels(snap.fuelRemainingBarrels), 'bbl', snap.fuelRemainingBarrels < 7),
+      row('Machine hours', fmtNum(snap.machineHrsRemaining, 0), 'hrs', snap.machineHrsRemaining < 100),
+    ] : []),
+  ]));
+  blocks.push(table('GEOLOGY · to date', [
+    row('Gold', fmtNum(snap.grossGold, 1), 'g'),
+    row('Expl / prod', `${fmtNum(snap.explorationGold, 1)} / ${fmtNum(snap.productionGold, 1)}`, 'g'),
+    row('Grade', fmtNum(snap.gPerSack, 2), 'g/sack'),
+    row('Sacks waiting', plain(snap.sacksWaiting), 'sacks'),
+  ]));
+  return blocks;
+}
+
+const AI_INSTRUCTIONS = `You write the report a gold mining company posts to its private Telegram channel for its partners and investors. The site is a primary (hard-rock) gold mine in Ethiopia: ore is dug from excavator pits and hand-dug shafts, carried in sacks, and milled at the company's own mill. All gold is split between the landowner and the investors by the landowner share.
+
+You receive the facts for one day or one week as JSON. Write the report from those facts:
+- Use only the numbers and facts in the JSON. Never estimate, add up or invent a figure that is not given. If something is missing, say so plainly.
+- Start with one or two sentences on the most important thing that happened.
+- Then the pits and shafts: digging progress, depth, whether the vein was found or lost, grades from the mill, which ones look promising and which are worrying. A vein lost for 3 days or more, or a pit marked ready_for_production, deserves a mention.
+- Describe the samples in your own words from their descriptions, saying which pit and depth they came from and whether gold was visible.
+- Then money: cash, costs, the landowner and investors' gold, and fuel and machine hours if they are given. Point out anything below its target.
+- Finish with one short line on what to watch next.
+- Plain, warm, professional English for business partners. No headings, no bullet lists, no markdown, no emoji. Short paragraphs. At most 1,200 characters.
+- Grams per sack against the production cut-off is what decides exploration versus production.`;
+
+let ai = null;
+// Claude writes the report from the facts. Returns null (figures only) when it can't.
+async function aiStory(facts) {
+  if (!ANTHROPIC_KEY) return null;
+  try {
+    ai ??= new Anthropic({ apiKey: ANTHROPIC_KEY, timeout: 60000, maxRetries: 1 });
+    const response = await ai.beta.messages.create({
+      model: AI_MODEL,
+      max_tokens: 8000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'medium' },
+      system: [{ type: 'text', text: AI_INSTRUCTIONS, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: JSON.stringify(facts) }],
+    });
+    if (response.stop_reason === 'refusal') return null;
+    const text = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    return text ? text.slice(0, 3000) : null;
+  } catch (e) {
+    console.error(`telegram-reports AI: ${safe(e)}`);
+    return null;
+  }
+}
+
+async function primaryBlocks(data, from, to, title) {
+  const figures = primaryFigureBlocks(data, from, to, title);
+  const story = await aiStory(primaryFacts(data, from, to));
+  if (!story) return figures;
+  return [figures[0], `✍️ ${escapeHtml(story)}`, ...figures.slice(1)];
+}
+const primaryDailyBlocks = (data, day) => primaryBlocks(data, day, day, 'DAILY REPORT');
+const primaryWeeklyBlocks = (data, monday) => primaryBlocks(data, monday, addDays(monday, 6), 'WEEKLY SUMMARY');
+
+// Either kind of site: the report blocks for a day, or for the week starting `monday`.
+const reportDaily = (data, day) => (data.primary ? primaryDailyBlocks(data, day) : dailyBlocks(data, day));
+const reportWeekly = (data, monday) => (data.primary ? primaryWeeklyBlocks(data, monday) : weeklyBlocks(data, monday));
+
+// The day's sample photos, after the report: one album per sample, its description as the caption.
+async function sendSamplePhotos(chatId, data, day, { silent = false, gap = LIVE_GAP_MS } = {}) {
+  if (!data.primary) return;
+  const nameOf = Object.fromEntries(data.shafts.map((s) => [s.id, s.name]));
+  for (const x of data.samples.filter((s) => s.date === day && (s.photo_paths || []).length > 0)) {
+    const { data: links, error } = await db.storage.from('samples').createSignedUrls(x.photo_paths.slice(0, 10), 3600);
+    if (error) { console.error(`telegram-reports photos: ${error.message}`); continue; }
+    const urls = links.map((l) => l.signedUrl).filter(Boolean);
+    if (urls.length === 0) continue;
+    const caption = `🪨 <b>${escapeHtml(SAMPLE_WORDS[x.sample_type] || x.sample_type)} · ${escapeHtml(nameOf[x.shaft_id] || '')}` +
+      `${x.depth_m !== null && x.depth_m !== undefined ? ` · ${plain(x.depth_m)} m` : ''}</b>${x.visible_gold ? ' · visible gold ✨' : ''}\n` +
+      escapeHtml(String(x.description).slice(0, 900));
+    try {
+      if (urls.length === 1) {
+        await telegram('sendPhoto', { chat_id: chatId, photo: urls[0], caption, parse_mode: 'HTML', disable_notification: silent });
+      } else {
+        await telegram('sendMediaGroup', {
+          chat_id: chatId, disable_notification: silent,
+          media: urls.map((u, i) => ({ type: 'photo', media: u, ...(i === 0 ? { caption, parse_mode: 'HTML' } : {}) })),
+        });
+      }
+    } catch (e) {
+      console.error(`telegram-reports photos: ${safe(e)}`);
+    }
+    await sleep(gap);
+  }
+}
+
 const withCorrections = (blocks, corrections) =>
   corrections.length > 0 ? [...blocks, corrections.map((c) => `✏️ ${escapeHtml(c)}`).join('\n')] : blocks;
 
@@ -283,18 +626,44 @@ const FIELD_LABELS = {
     machine_hrs_topped_up: ['Machine hours added', 'hrs'], paid_by: ['Paid by', ''], notes: ['Notes', ''],
   },
 };
+// Primary sites: what changed, with pit/shaft names put in by recordChanged.
+Object.assign(FIELD_LABELS, {
+  sack_counts: { date: ['Date', ''], pit: ['Pit', ''], sacks: ['Sacks', ''], depth_m: ['Depth', 'm'], vein: ['Vein', ''], notes: ['Notes', ''] },
+  milling_results: { date: ['Date', ''], pit: ['Pit', ''], sacks_milled: ['Sacks milled', ''], gold_g: ['Gold', 'g'], notes: ['Notes', ''] },
+  excavator_logs: {
+    date: ['Date', ''], exploration_hrs: ['Exploration hours', 'hrs'], production_hrs: ['Production hours', 'hrs'], idle_hrs: ['Idle hours', 'hrs'],
+    excavator_fuel_barrels: ['Excavator fuel', 'bbl'], mill_fuel_barrels: ['Mill fuel', 'bbl'], notes: ['Notes', ''],
+  },
+  shaft_samples: {
+    date: ['Date', ''], pit: ['Pit', ''], depth_m: ['Depth', 'm'], sample_type: ['Type', ''], visible_gold: ['Visible gold', ''],
+    description: ['Description', ''], photo_paths: ['Photos', ''],
+  },
+});
+const WATCHED_TABLES = ['daily_logs', 'transactions', 'sack_counts', 'milling_results', 'excavator_logs', 'shaft_samples'];
+const TABLE_WORDS = {
+  daily_logs: 'Daily log', transactions: 'Statement', sack_counts: 'Daily entry', milling_results: 'Result',
+  excavator_logs: 'Excavator day', shaft_samples: 'Sample',
+};
+const PRIMARY_SUMMARY = {
+  sack_counts: (r) => `${r.pit} · ${plain(r.sacks)} sacks${r.depth_m !== null && r.depth_m !== undefined ? ` · ${plain(r.depth_m)} m` : ''}${r.vein ? ` · ${VEIN_WORDS[r.vein]}` : ''}`,
+  milling_results: (r) => `${r.pit} · ${plain(r.gold_g)} g from ${plain(r.sacks_milled)} sacks`,
+  excavator_logs: (r) => `hours ${plain(r.exploration_hrs)}/${plain(r.production_hrs)}/${plain(r.idle_hrs)} · fuel ${plain(r.excavator_fuel_barrels)}/${plain(r.mill_fuel_barrels)} bbl`,
+  shaft_samples: (r) => `${r.pit} · ${SAMPLE_WORDS[r.sample_type] || r.sample_type}: ${String(r.description || '').slice(0, 120)}`,
+};
+
 // Bookkeeping columns that change on every save and mean nothing to readers.
 const IGNORED_FIELDS = new Set(['id', 'site_id', 'created_at', 'updated_at', 'synced_at', 'created_offline',
-  'logged_by', 'entered_by', 'updated_by', 'week_start']);
+  'logged_by', 'entered_by', 'updated_by', 'week_start', 'shaft_id']);
 const fieldValue = (key, v) =>
-  (v === null || v === undefined || v === '' ? '—' : key === 'amount' ? fmtETB(v) : typeof v === 'number' ? plain(v) : String(v));
+  (v === null || v === undefined || v === '' ? '—' : key === 'amount' ? fmtETB(v) : typeof v === 'number' ? plain(v)
+    : key === 'photo_paths' && Array.isArray(v) ? String(v.length) : String(v));
 const recordSummary = (tableName, r) =>
-  (tableName === 'transactions'
+  (PRIMARY_SUMMARY[tableName] ? PRIMARY_SUMMARY[tableName](r) : tableName === 'transactions'
     ? `${r.type === 'expense' ? '−' : '+'}${fmtETB(r.amount)} ETB ${r.category}${r.notes ? ` · ${r.notes}` : ''}`
     : `gold ${plain(r.gold_g)} g · hours ${plain(r.cleaning_hrs)}/${plain(r.prep_hrs)}/${plain(r.idle_hrs)} · fuel used ${plain(r.fuel_received_barrels)} bbl${r.notes ? ` · ${r.notes}` : ''}`);
 
 function describeChange(tableName, action, oldRow, newRow) {
-  const what = tableName === 'transactions' ? 'Statement' : 'Daily log';
+  const what = TABLE_WORDS[tableName] || 'Daily log';
   if (action === 'insert') return { icon: '➕', title: 'LATE ENTRY', text: `${what} added: ${recordSummary(tableName, newRow)}` };
   if (action === 'delete') return { icon: '🗑', title: 'REMOVED', text: `${what} removed: ${recordSummary(tableName, oldRow)}` };
   const labels = FIELD_LABELS[tableName] || {};
@@ -306,7 +675,9 @@ function describeChange(tableName, action, oldRow, newRow) {
       return `${label} ${fieldValue(k, oldRow?.[k])} → ${fieldValue(k, newRow?.[k])}${unit ? ` ${unit}` : ''}`;
     });
   if (changes.length === 0) return null;
-  const which = tableName === 'transactions' ? `Statement (${newRow?.category || oldRow?.category})` : 'Daily log';
+  const which = tableName === 'transactions' ? `Statement (${newRow?.category || oldRow?.category})`
+    : PRIMARY_SUMMARY[tableName] && (newRow?.pit || oldRow?.pit) ? `${TABLE_WORDS[tableName]} (${newRow?.pit || oldRow?.pit})`
+    : TABLE_WORDS[tableName] || 'Daily log';
   return { icon: '✏️', title: 'CORRECTION', text: `${which}: ${changes.join('; ')}` };
 }
 
@@ -370,7 +741,7 @@ async function loadAll(tableName, siteId) {
 
 async function loadSite(siteId) {
   const [siteRes, inputsRes, logs, txs] = await Promise.all([
-    db.from('sites').select('id, name').eq('id', siteId).maybeSingle(),
+    db.from('sites').select('*').eq('id', siteId).maybeSingle(),
     db.from('inputs').select('*').eq('site_id', siteId).maybeSingle(),
     loadAll('daily_logs', siteId),
     loadAll('transactions', siteId),
@@ -378,7 +749,10 @@ async function loadSite(siteId) {
   if (siteRes.error) throw new Error(`sites: ${siteRes.error.message}`);
   if (inputsRes.error) throw new Error(`inputs: ${inputsRes.error.message}`);
   if (!siteRes.data || !inputsRes.data) throw new Error('Site or its Inputs not found.');
-  return { site: siteRes.data, inputs: inputsRes.data, logs, txs };
+  if (siteRes.data.site_type !== 'primary') return { site: siteRes.data, inputs: inputsRes.data, logs, txs };
+  const [shafts, sacks, results, exc, samples] = await Promise.all(
+    ['shafts', 'sack_counts', 'milling_results', 'excavator_logs', 'shaft_samples'].map((t) => loadAll(t, siteId)));
+  return { site: siteRes.data, inputs: inputsRes.data, logs, txs, primary: true, shafts, sacks, results, exc, samples };
 }
 
 async function channelFor(siteId) {
@@ -452,7 +826,8 @@ async function sendTest(siteId) {
   const channel = await channelFor(siteId);
   if (!channel) throw new Error('No channel is connected to this site yet.');
   const data = await loadSite(siteId);
-  await sendBlocks(channel.chat_id, ['🧪 <b>TEST</b>', ...dailyBlocks(data, todayInEthiopia())]);
+  await sendBlocks(channel.chat_id, ['🧪 <b>TEST</b>', ...(await reportDaily(data, todayInEthiopia()))]);
+  await sendSamplePhotos(channel.chat_id, data, todayInEthiopia());
   return { ok: true, channel: channel.chat_title };
 }
 
@@ -465,7 +840,8 @@ async function backfill(siteId) {
   const data = await loadSite(siteId);
   const today = todayInEthiopia();
   const posted = await postedReports(siteId, channel.chat_id);
-  const days = [...new Set([...data.logs, ...data.txs].map((r) => r.date))].filter((d) => d && d < today).sort();
+  const dated = data.primary ? [...data.sacks, ...data.results, ...data.exc, ...data.samples, ...data.txs] : [...data.logs, ...data.txs];
+  const days = [...new Set(dated.map((r) => r.date))].filter((d) => d && d < today).sort();
   const slots = days.map((day) => ({ kind: 'daily', date: day, order: `${day}|0` }));
   for (const monday of new Set(days.map((d) => weekStart(d)))) {
     const sunday = addDays(monday, 6);
@@ -475,24 +851,27 @@ async function backfill(siteId) {
   let count = 0;
   for (const slot of todo) {
     if (Date.now() - started > BACKFILL_BUDGET_MS) break;
-    const blocks = slot.kind === 'daily' ? dailyBlocks(data, slot.date) : weeklyBlocks(data, slot.date);
+    const blocks = slot.kind === 'daily' ? await reportDaily(data, slot.date) : await reportWeekly(data, slot.date);
     await publish(siteId, channel.chat_id, slot.kind, slot.date, blocks, { gap: BACKFILL_GAP_MS, silent: true });
+    if (slot.kind === 'daily') await sendSamplePhotos(channel.chat_id, data, slot.date, { silent: true, gap: BACKFILL_GAP_MS });
     count++;
   }
   return { posted: count, remaining: todo.length - count, done: count === todo.length };
 }
 
 // The days whose daily report a scheduled run should post for one site:
-//   due      every 10 minutes: days whose daily log was saved at least SETTLE_MINUTES ago
+//   due      every 10 minutes: days whose daily log (primary sites: daily entry) was saved
+//            at least SETTLE_MINUTES ago
 //   morning  9 am: yesterday, even without a log (the report then says the log is missing)
 //   daily    the old fixed 8 pm run (before migration 005): today
-async function daysToPost(kind, siteId, today) {
+async function daysToPost(kind, siteId, today, primary) {
   if (kind === 'morning') return [addDays(today, -1)];
   if (kind === 'daily') return [today];
   const settledBefore = new Date(Date.now() - SETTLE_MINUTES * 60000).toISOString();
-  const { data, error } = await db.from('daily_logs').select('date').eq('site_id', siteId)
+  const entries = primary ? 'sack_counts' : 'daily_logs';
+  const { data, error } = await db.from(entries).select('date').eq('site_id', siteId)
     .gte('date', addDays(today, -AUTO_POST_DAYS)).lte('date', today).lte('created_at', settledBefore);
-  if (error) throw new Error(`daily_logs: ${error.message}`);
+  if (error) throw new Error(`${entries}: ${error.message}`);
   return [...new Set(data.map((l) => l.date))].sort();
 }
 
@@ -504,14 +883,18 @@ async function runScheduled(kind) {
   for (const c of channels) {
     try {
       const posted = await postedReports(c.site_id, c.chat_id);
+      const { data: site } = await db.from('sites').select('*').eq('id', c.site_id).maybeSingle();
       const todo = kind === 'weekly'
         ? [weekStart(day)].filter((monday) => !posted.has(`weekly|${monday}`))
-        : (await daysToPost(kind, c.site_id, day)).filter((date) => !posted.has(`daily|${date}`));
+        : (await daysToPost(kind, c.site_id, day, site?.site_type === 'primary')).filter((date) => !posted.has(`daily|${date}`));
       if (todo.length === 0) { results.push({ site_id: c.site_id, ok: true, skipped: 'nothing new' }); continue; }
       const data = await loadSite(c.site_id);
       for (const date of todo) {
-        if (kind === 'weekly') await publish(c.site_id, c.chat_id, 'weekly', date, weeklyBlocks(data, date));
-        else await publish(c.site_id, c.chat_id, 'daily', date, dailyBlocks(data, date));
+        if (kind === 'weekly') await publish(c.site_id, c.chat_id, 'weekly', date, await reportWeekly(data, date));
+        else {
+          await publish(c.site_id, c.chat_id, 'daily', date, await reportDaily(data, date));
+          await sendSamplePhotos(c.chat_id, data, date);
+        }
       }
       results.push({ site_id: c.site_id, ok: true, posted: todo });
     } catch (e) {
@@ -527,12 +910,17 @@ async function runScheduled(kind) {
 async function recordChanged(auditId) {
   const { data: audit, error } = await db.from('audit_log').select('*').eq('id', auditId).maybeSingle();
   if (error) throw new Error(`audit_log: ${error.message}`);
-  if (!audit || !['daily_logs', 'transactions'].includes(audit.table_name)) return { skipped: 'not a log or statement change' };
+  if (!audit || !WATCHED_TABLES.includes(audit.table_name)) return { skipped: 'not a log or statement change' };
   const oldRow = audit.old_data || audit.old_value || null;
   const newRow = audit.new_data || audit.new_value || null;
   const siteId = (newRow || oldRow)?.site_id;
   const channel = siteId && (await channelFor(siteId));
   if (!channel) return { skipped: 'no channel' };
+  if (siteId && (newRow?.shaft_id || oldRow?.shaft_id)) {
+    const { data: shaft } = await db.from('shafts').select('name').eq('id', (newRow || oldRow).shaft_id).maybeSingle();
+    if (newRow) newRow.pit = shaft?.name || '?';
+    if (oldRow) oldRow.pit = shaft?.name || '?';
+  }
   const change = describeChange(audit.table_name, audit.action, oldRow, newRow);
   if (!change) return { skipped: 'no visible change' };
 
@@ -550,8 +938,8 @@ async function recordChanged(auditId) {
     const weekly = posted.get(`weekly|${weekStart(day)}`);
     if (!daily && !weekly) continue;
     const line = `Edited ${when} by ${who}: ${change.text}`;
-    if (daily) await rewrite(daily, dailyBlocks(data, day), [...daily.corrections, line]);
-    if (weekly) await rewrite(weekly, weeklyBlocks(data, weekStart(day)), [...weekly.corrections, line]);
+    if (daily) await rewrite(daily, await reportDaily(data, day), [...daily.corrections, line]);
+    if (weekly) await rewrite(weekly, await reportWeekly(data, weekStart(day)), [...weekly.corrections, line]);
     const notice = `${change.icon} <b>${change.title}</b> · ${daily ? 'report of' : 'entry for'} ${prettyDate(day)}\n` +
       `${escapeHtml(change.text)}\n<i>by ${escapeHtml(who)} · ${when}</i>`;
     const replyTo = (daily || weekly).message_ids[0];
