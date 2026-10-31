@@ -7,6 +7,7 @@ A modern Progressive Web App for multi-site gold mining operations. Built for pa
 ## Features
 
 - **Daily Operations Log** — Site team logs hours, gold produced, fuel used, machine hours
+- **Primary (hard-rock) sites** — Pits and shafts, daily sack counts, milling results, exploration vs production, optional excavator (see `docs/SETUP.md`)
 - **Financial Statement** — Every transaction tracked by category
 - **Live Dashboard** — Real-time working capital, production, profitability
 - **Multi-site & Multi-partner** — Designed for multiple mining sites with different partnership structures
@@ -67,6 +68,7 @@ Core tables:
 - `transactions` — financial register: every ETB in/out
 - `rotation` — bi-weekly operational rotation (per partnership agreement)
 - `audit_log` — change tracking for transparency
+- `shafts`, `sack_counts`, `milling_results`, `excavator_logs`, `shaft_samples` — primary sites only: pits and shafts (location, phase history), daily sacks with depth and vein, sacks milled and gold recovered, excavator hours and fuel, dated rock samples with photos (Storage bucket `samples`) (`sites.site_type` is `alluvial` or `primary`)
 
 **Row-Level Security:** Enforces at the database level. Super admin sees all. Site managers / leads see only their site. Partners see only their assigned sites.
 
@@ -97,6 +99,22 @@ Runway calculations:
 Daily Fuel Used = barrels entered in the daily log (Fuel Used); a day with none entered counts as 0
 Fuel Runway (days) = fuel_remaining_barrels / average barrels used per day (last 7 logs)
 Machine Runway (days) = machine_hrs_remaining / avg_daily_hours
+```
+
+**Primary sites** use the same gold, money, fuel and machine-hour formulas (the app runs
+`weeklySnap` on them), with milling results as the gold and excavator days as the hours
+and fuel used:
+```
+Gross Gold = sum of gold_g in milling results (exploration and production)
+Landowner Gold = Gross Gold × landowner_share;  Investors' Gold = Net Saleable Gold
+A result's phase = the pit/shaft's phase on the result's date (from its phase_history of switches)
+Sacks Waiting = sacks dug (sack_counts) - sacks milled (milling_results)
+Grams per Sack = Gross Gold / sacks milled;  g/t = grams per sack / (sack_kg / 1000)
+Cost per Sack = Total Costs / sacks milled
+With the excavator on:
+  Fuel Remaining (barrels) = opening + Barrels Received on Fuel purchases - excavator and mill barrels used
+  Machine Hours Remaining = opening + Machine Rental hours added - exploration, production and idle hours
+Status without the excavator: caution when cash < target reserve, critical when profit < 0
 ```
 
 ## Configuration
@@ -133,8 +151,8 @@ Works offline for already-loaded screens; syncs to Supabase when online.
 | Role | Can | Cannot |
 |------|-----|--------|
 | **Super Admin** | Everything — edit inputs, create users, override data, see audit log | — |
-| **Site Manager** | Enter daily logs, view dashboard, view transactions at their site | Edit inputs, see other sites |
-| **Financial Lead** | Enter transactions, view dashboard at their site | Edit inputs, enter logs |
+| **Site Manager** | Enter daily logs (primary sites: pits & shafts, sacks, milling results, excavator days), view dashboard, view transactions at their site | Edit inputs, see other sites |
+| **Financial Lead** | Enter transactions, view dashboard at their site | Edit inputs, enter logs or primary-site entries |
 | **Partner** | View dashboard (read-only) | Enter any data |
 
 ## Adding Users

@@ -51,6 +51,58 @@ Changes to the live database are kept as numbered SQL files in `docs/migrations/
 3. Never edit a file that has already been run. Add a new numbered file instead.
 4. Each file ends with commented-out UNDO steps in case a change has to be reversed.
 
+## Primary sites
+
+A site is either **alluvial** (excavator, washing, daily logs) or **primary** (hard rock:
+pits and shafts, sacks, our own mill). Every existing site is alluvial and works as before.
+
+1. Run `docs/migrations/006_primary_mining.sql`, then `docs/migrations/007_pit_details_and_samples.sql`,
+   once each in Supabase → SQL Editor. Every check row must say `true`. 007 also creates the
+   private `samples` storage folder for sample photos.
+2. As super admin, choose **+ New Site → Site Type → Primary**. Assign site managers and
+   partners to the site the same way as for any other site.
+3. In **Inputs**, set the gold price, landowner share, opening cash, target cash reserve,
+   **Sack Weight** (25 kg) and **Production Cut-off** (0.4 g per sack).
+4. If the site uses an excavator, tick **Excavator on this site** and enter the opening
+   fuel stock (barrels) and opening machine hours. This adds the **Excavator** tab, the
+   fuel and machine-hour tiles and warnings, and the **Fuel** (barrels received) and
+   **Machine Rental** (hours added) expense types. The excavator and the mill share one
+   fuel stock: all fuel is bought as Fuel, and each day's barrels used by the excavator and
+   the mill are entered on the Excavator tab.
+
+How the site is run in the app:
+- **Site Setup** (super admin and site managers): add each excavator pit or hand-dug shaft.
+  Its GPS position is required (stand at the pit and press **Use my location**, or type the
+  numbers); a map link is optional. Pits without GPS show a "GPS missing" flag. Each starts in exploration. **Switch to
+  Production** and **Back to Exploration** record their dates, so every result keeps the phase
+  of its own date. The app suggests switching when the last 3 results average the cut-off or
+  more, and warns when the vein has been lost for 3 days or more. Each card has **Samples**
+  (dated quartz/stone samples with depth, a written description, visible gold yes/no and
+  photos) and a **Cross-section** drawn from the daily depths, vein, results and samples, with
+  a depth vs grade graph.
+  A pit or shaft with entries, results or samples can't be deleted; close it instead.
+- **Daily Entry**: tap a pit or shaft, enter sacks, depth reached (m) and the vein (found /
+  lost / not reached), save, then the next one.
+- **Results**: sacks milled and the grams of gold they gave. The app shows grams per sack,
+  g/t and the phase before saving, and asks first if more sacks are milled than are waiting.
+- **Statement**: as on alluvial sites, with expense types for primary mining.
+- The Dashboard has two views. **Finance**: cash, unsold gold, costs, profit, the landowner /
+  investors split, and fuel and machine hours when the excavator is on. **Geology**: gold
+  produced (exploration / production), average grade, sacks waiting, each open pit's phase,
+  depth, vein and grade, and the pit comparison graph. Excavator hours are on the Excavator tab.
+- Sample photos are shrunk on the phone (about 200–400 KB each) and stored privately; only
+  people assigned to the site can see them. Photos can't be added in Demo Mode.
+- All gold, exploration and production, is split landowner / investors by the landowner
+  share in Inputs (0.30 = 30%), the same as on alluvial sites.
+
+Who can do what: site managers and the super admin add pits, shafts, sack counts, results
+and excavator days. A site manager can change only their own entries (and any pit or shaft
+at their site, to switch or close it). Only the super admin can delete. Financial leads add
+statement entries only; partners can only look. The database enforces all of this.
+
+Telegram reports are not built for primary sites yet, so the Telegram section is hidden in
+their Inputs. Cloning is not offered for primary sites.
+
 ## Telegram reports
 
 Each site can post a daily report and a weekly summary (Sundays, 8 pm) to its own

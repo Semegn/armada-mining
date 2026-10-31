@@ -89,4 +89,12 @@ export default defineConfig({
       },
     }),
   ],
+  // The libraries ship as their own file, separate from the app's code.
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: { vendor: ['react', 'react-dom', '@supabase/supabase-js'] },
+      },
+    },
+  },
 });
