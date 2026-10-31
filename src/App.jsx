@@ -48,10 +48,49 @@ class MockQueryBuilder {
     if (raw) return JSON.parse(raw);
     
     let initial = [];
+    // Sample entries for the primary demo site are dated relative to today.
+    const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const demoUser = 'b05f2b9a-69df-4764-bdda-e80b660808dd';
+    const primarySite = 'demo-primary-site-id';
     if (this.table === 'users') {
       initial = [{ id: 'b05f2b9a-69df-4764-bdda-e80b660808dd', name: 'Demo Mode', email: 'demo@armadamining.com', role: 'site_manager' }];
     } else if (this.table === 'sites') {
-      initial = [{ id: 'demo-site-id', name: 'ARMADA Main (Demo)', location: 'Oromia Region' }];
+      initial = [
+        { id: 'demo-site-id', name: 'ARMADA Main (Demo)', location: 'Oromia Region' },
+        { id: primarySite, name: 'Primary Demo', location: 'Benishangul-Gumuz Region', site_type: 'primary' },
+      ];
+    } else if (this.table === 'shafts') {
+      initial = [
+        { id: 'demo-pit-1', site_id: primarySite, logged_by: demoUser, name: 'Pit 1', kind: 'pit', opened_on: daysAgo(20), production_from: daysAgo(10), closed_on: null, notes: 'Main quartz vein, opened by excavator.' },
+        { id: 'demo-pit-2', site_id: primarySite, logged_by: demoUser, name: 'Pit 2', kind: 'pit', opened_on: daysAgo(8), production_from: null, closed_on: null, notes: 'Trench across the eastern vein.' },
+        { id: 'demo-shaft-1', site_id: primarySite, logged_by: demoUser, name: 'Shaft 1', kind: 'shaft', opened_on: daysAgo(25), production_from: daysAgo(3), closed_on: null, notes: null },
+        { id: 'demo-shaft-2', site_id: primarySite, logged_by: demoUser, name: 'Shaft 2', kind: 'shaft', opened_on: daysAgo(12), production_from: null, closed_on: null, notes: 'Low grade so far.' },
+      ];
+    } else if (this.table === 'sack_counts') {
+      const counts = [
+        ['demo-pit-1', [[6, 30], [5, 28], [4, 32], [3, 30], [2, 26], [1, 30], [0, 24]]],
+        ['demo-pit-2', [[5, 10], [3, 12], [1, 8]]],
+        ['demo-shaft-1', [[6, 12], [5, 10], [4, 14], [3, 12], [2, 10], [1, 12], [0, 10]]],
+        ['demo-shaft-2', [[6, 6], [4, 5], [2, 4]]],
+      ];
+      initial = counts.flatMap(([shaft_id, days]) => days.map(([n, sacks]) => (
+        { id: `demo-sacks-${shaft_id}-${n}`, site_id: primarySite, logged_by: demoUser, shaft_id, date: daysAgo(n), sacks, notes: null }
+      )));
+    } else if (this.table === 'milling_results') {
+      const results = [
+        ['demo-pit-1', [[5, 60, 27.0], [3, 58, 27.8], [1, 56, 25.2]]],
+        ['demo-pit-2', [[4, 10, 4.3], [2, 8, 3.5], [0, 8, 3.6]]],
+        ['demo-shaft-1', [[5, 20, 7.0], [2, 24, 9.6], [0, 22, 8.8]]],
+        ['demo-shaft-2', [[4, 6, 0.9], [1, 5, 0.7]]],
+      ];
+      initial = results.flatMap(([shaft_id, days]) => days.map(([n, sacks_milled, gold_g]) => (
+        { id: `demo-result-${shaft_id}-${n}`, site_id: primarySite, logged_by: demoUser, shaft_id, date: daysAgo(n), sacks_milled, gold_g, notes: null }
+      )));
+    } else if (this.table === 'excavator_logs') {
+      const days = [[6, 3, 7, 1], [5, 2, 8, 0], [4, 4, 6, 1], [3, 2, 8, 1], [2, 3, 7, 0], [1, 1, 9, 1], [0, 2, 6, 1]];
+      initial = days.map(([n, exploration_hrs, production_hrs, idle_hrs]) => (
+        { id: `demo-excavator-${n}`, site_id: primarySite, logged_by: demoUser, date: daysAgo(n), exploration_hrs, production_hrs, idle_hrs, excavator_fuel_barrels: 2, mill_fuel_barrels: 1, notes: null }
+      ));
     } else if (this.table === 'inputs') {
       initial = [{
         id: 'demo-inputs-id',
@@ -69,6 +108,25 @@ class MockQueryBuilder {
         fuel_per_barrel: 200,
         cleaning_fuel_rate: 25,
         prep_fuel_rate: 20
+      }, {
+        id: 'demo-primary-inputs-id',
+        site_id: primarySite,
+        gold_price: 8200,
+        fuel_price: 0,
+        rental_rate: 0,
+        royalty_rate: 0.07,
+        landowner_share: 0.30,
+        target_cash_reserve: 200000,
+        efficiency_threshold: 0,
+        opening_cash: 600000,
+        machine_hrs_opening: 40,
+        fuel_barrels_opening: 12,
+        fuel_per_barrel: 200,
+        cleaning_fuel_rate: 0,
+        prep_fuel_rate: 0,
+        sack_kg: 25,
+        cutoff_g_per_sack: 0.4,
+        excavator_on: true
       }];
     } else if (this.table === 'daily_logs') {
       initial = [
@@ -84,7 +142,17 @@ class MockQueryBuilder {
         { id: 'tx-2', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 86400000).toISOString().slice(0, 10)), amount: 130000, type: "expense", category: "Fuel", paid_by: "Armada", notes: "Fuel delivery payment (5 barrels received).", fuel_barrels_topped_up: 5 },
         { id: 'tx-3', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 172800000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 172800000).toISOString().slice(0, 10)), amount: 482000, type: "credit", category: "Gold Sale", paid_by: "Partner B", notes: "Sold 60 grams of gold.", gold_grams_sold: 60 },
         { id: 'tx-4', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 259200000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 259200000).toISOString().slice(0, 10)), amount: 45000, type: "expense", category: "Maintenance", paid_by: "Armada", notes: "Excavator hydraulic hose replacement and oil top-up." },
-        { id: 'tx-5', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 345600000).toISOString().slice(0, 10)), amount: 300000, type: "expense", category: "Machine Rental", paid_by: "Armada", notes: "Topped up 20 hours of contracted machine time.", machine_hrs_topped_up: 20 }
+        { id: 'tx-5', site_id: 'demo-site-id', entered_by: 'b05f2b9a-69df-4764-bdda-e80b660808dd', date: new Date(Date.now() - 345600000).toISOString().slice(0, 10), week_start: weekStart(new Date(Date.now() - 345600000).toISOString().slice(0, 10)), amount: 300000, type: "expense", category: "Machine Rental", paid_by: "Armada", notes: "Topped up 20 hours of contracted machine time.", machine_hrs_topped_up: 20 },
+        ...[
+          [6, 93000, 'expense', 'Fuel', 'Fuel delivery (15 barrels) for the excavator and the mill.', { fuel_barrels_topped_up: 15 }],
+          [6, 150000, 'expense', 'Machine Rental', 'Excavator: 100 hours.', { machine_hrs_topped_up: 100 }],
+          [3, 18500, 'expense', 'Mill Parts & Maintenance', 'Hammer mill screen and bearings.', {}],
+          [2, 24000, 'expense', 'Accommodation & Food', 'Crew food for the week.', {}],
+          [1, 492000, 'credit', 'Gold Sale', 'Sold 60 grams of gold.', { gold_grams_sold: 60 }],
+          [0, 72000, 'expense', 'Labour (Diggers & Haulers)', 'Weekly wages, diggers and haulers.', {}],
+        ].map(([n, amount, type, category, notes, extra]) => (
+          { id: `demo-primary-tx-${n}-${category}`, site_id: primarySite, entered_by: demoUser, date: daysAgo(n), week_start: weekStart(daysAgo(n)), amount, type, category, paid_by: 'Armada', notes, ...extra }
+        )),
       ];
     }
     
@@ -357,6 +425,22 @@ const CATEGORIES = [
 
 const CREDIT_CATEGORIES = ['Gold Sale', 'Loan', 'Investment', 'Other Income'];
 
+// Primary (hard-rock) sites: gold comes from pits and shafts, in sacks, through our own mill.
+// Sites without a type are alluvial, so nothing changes for them.
+const isPrimarySite = (site) => site?.site_type === 'primary';
+
+const PRIMARY_CATEGORIES = [
+  'Labour (Diggers & Haulers)', 'Mill Fuel', 'Mill Parts & Maintenance', 'Mill Operators',
+  'Sacks & Tools', 'Timber & Shaft Support', 'Accommodation & Food', 'Transport', 'Water',
+  'Security', 'Government', 'Royalty', 'Medical', 'Asset Purchase', 'Loan Return',
+  'Other', 'Profit Share',
+];
+// With the excavator on, all fuel is bought as Fuel (one stock for the excavator and the mill)
+// and machine hours as Machine Rental, the same categories the alluvial sites use.
+const primaryCategories = (excavatorOn) => (excavatorOn
+  ? ['Fuel', 'Machine Rental', ...PRIMARY_CATEGORIES.filter((c) => c !== 'Mill Fuel')]
+  : PRIMARY_CATEGORIES);
+
 // ============================================================
 // LOCALIZATION
 // ============================================================
@@ -460,6 +544,81 @@ const EN_STRINGS = {
   'tg.demoNote': 'Telegram reports are not available in Demo Mode.',
   'tg.outdated': 'The Telegram bot in Supabase is missing or out of date, so some buttons and reports may not work. Paste the latest bot file into Supabase (Edge Functions → telegram-reports) and deploy it again.',
   'tg.openBotFile': 'Open the latest bot file',
+  // Primary sites (pits & shafts, sacks, milling, excavator)
+  'nav.shafts': 'Pits & Shafts', 'nav.sacks': 'Sacks', 'nav.results': 'Results', 'nav.excavator': 'Excavator',
+  'site.type': 'Site Type', 'site.alluvial': 'Alluvial — excavator, washing, fuel',
+  'site.primary': 'Primary — pits & shafts, sacks, mill', 'site.primaryTag': 'Primary',
+  'phase.exploration': 'Exploration', 'phase.production': 'Production',
+  'primary.lastEntry': 'Last entry', 'primary.noEntriesYet': 'No entries yet', 'primary.pitsShafts': 'pits & shafts',
+  'section.gold': 'Gold (All-Time)', 'section.sacks': 'Sacks (All-Time)',
+  'section.excavatorHours': 'Excavator Hours (All-Time)', 'section.goldSource': 'Where the Gold Came From',
+  'tile.landowner': 'Landowner', 'tile.investors': 'Investors', 'tile.avgGrade': 'Average Grade',
+  'tile.sacksDug': 'Sacks Dug', 'tile.sacksMilled': 'Sacks Milled', 'tile.sacksWaiting': 'Sacks Waiting',
+  'tile.dugMinusMilled': 'dug − milled', 'tile.costPerSack': 'Cost per Sack', 'tile.perSackMilled': 'per sack milled',
+  'tile.sacks': 'sacks', 'tile.idle': 'Idle',
+  'source.pits': 'Excavator pits', 'source.shafts': 'Hand-dug shafts',
+  'shafts.title': 'Pits & Shafts', 'shafts.new': '+ New Pit or Shaft', 'common.cancel': 'Cancel',
+  'shafts.name': 'Name', 'shafts.kind': 'Type', 'shafts.pit': 'Pit (excavator)', 'shafts.shaft': 'Shaft (hand-dug)',
+  'shafts.pitShort': 'Excavator', 'shafts.shaftShort': 'Hand-dug',
+  'shafts.openedOn': 'Opened On', 'shafts.productionFrom': 'Production From', 'shafts.closedOn': 'Closed On',
+  'shafts.formHint': 'Leave Production From empty while it is still in exploration, and Closed On empty while it is open.',
+  'shafts.notes': 'Notes',
+  'shafts.save': 'Save', 'shafts.saving': 'Saving…', 'shafts.editing': 'Editing',
+  'shafts.none': 'No pits or shafts yet. Add the first one to start counting sacks.',
+  'shafts.productionSince': 'Production since', 'shafts.closed': 'Closed',
+  'shafts.dug': 'Dug', 'shafts.milled': 'milled', 'shafts.waiting': 'waiting', 'shafts.gold': 'Gold',
+  'shafts.readyTitle': 'Ready for production?', 'shafts.readyAvg': 'The last 3 results average',
+  'shafts.readyCutoff': 'The cut-off is',
+  'shafts.switch': 'Switch to Production', 'shafts.close': 'Close', 'shafts.confirm': 'Confirm',
+  'shafts.switchDate': 'Production from', 'shafts.closeDate': 'Closed on',
+  'shafts.nameRequired': 'Enter a name.', 'shafts.nameTaken': 'A pit or shaft with this name already exists at this site.',
+  'shafts.hasData': "This pit or shaft has sacks or results, so it can't be deleted. Close it instead.",
+  'shafts.confirmDelete': 'Delete this pit or shaft? The change history keeps a record of it.',
+  'sacks.title': 'Sacks', 'sacks.entries': 'entries', 'sacks.date': 'Date',
+  'sacks.perShaft': 'Sacks dug, per pit or shaft', 'sacks.notes': 'Notes',
+  'sacks.save': 'Save Counts', 'sacks.saving': 'Saving…',
+  'sacks.noShafts': 'Add a pit or shaft first, on the Pits & Shafts tab.',
+  'sacks.noneOpen': 'No pits or shafts are open on this date.',
+  'sacks.closedHidden': 'Closed pits and shafts are not listed.',
+  'sacks.enterOne': 'Enter at least one count.', 'sacks.whole': 'Enter sacks as whole numbers.',
+  'sacks.editPositive': 'Enter a whole number of sacks, more than 0.',
+  'sacks.confirmSecond': 'These already have a count for this date:', 'sacks.addAnyway': 'Add these sacks as well?',
+  'sacks.editing': 'Editing count from', 'sacks.shaft': 'Pit / Shaft', 'sacks.sacks': 'Sacks',
+  'sacks.confirmDelete': 'Delete this sack count? The change history keeps a record of it.',
+  'sacks.colDate': 'Date', 'sacks.colShaft': 'Pit / Shaft', 'sacks.colSacks': 'Sacks', 'sacks.colNotes': 'Notes',
+  'sacks.none': 'No sack counts yet',
+  'results.title': 'Milling Results', 'results.entries': 'results', 'results.date': 'Date',
+  'results.shaft': 'Pit / Shaft', 'results.choose': 'Choose…', 'results.waiting': 'waiting',
+  'results.sacksMilled': 'Sacks Milled', 'results.gold': 'Gold (g)', 'results.notes': 'Notes',
+  'results.perSack': 'g per sack', 'results.save': 'Save Result', 'results.saving': 'Saving…',
+  'results.chooseShaft': 'Choose a pit or shaft.',
+  'results.enterSacks': 'Enter the number of sacks milled, as a whole number.',
+  'results.enterGold': 'Enter the grams of gold, 0 or more.',
+  'results.moreThanWaiting': 'That is more sacks than are waiting from this pit or shaft', 'results.saveAnyway': 'Save anyway?',
+  'results.editing': 'Editing result from',
+  'results.confirmDelete': 'Delete this milling result? The change history keeps a record of it.',
+  'results.colDate': 'Date', 'results.colShaft': 'Pit / Shaft', 'results.colSacks': 'Sacks',
+  'results.colGold': 'Gold (g)', 'results.colGps': 'g/sack', 'results.colPhase': 'Phase', 'results.colNotes': 'Notes',
+  'results.none': 'No results yet',
+  'exc.title': 'Excavator', 'exc.entries': 'days', 'exc.date': 'Date',
+  'exc.exploration': 'Exploration Hours', 'exc.production': 'Production Hours', 'exc.idle': 'Idle Hours (charged)',
+  'exc.fuelExcavator': 'Fuel Used by Excavator (barrels)', 'exc.fuelMill': 'Fuel Used by Mill (barrels)', 'exc.notes': 'Notes',
+  'exc.save': 'Save Day', 'exc.saving': 'Saving…',
+  'exc.hoursToday': 'hours', 'exc.hoursLeft': 'machine hours left', 'exc.barrelsToday': 'barrels', 'exc.fuelLeft': 'fuel left',
+  'exc.enterSomething': 'Enter hours or fuel for the day.', 'exc.noNegative': "Numbers can't be negative.",
+  'exc.dateTaken': 'There is already an entry for this date. Add another one?',
+  'exc.editing': 'Editing day', 'exc.confirmDelete': 'Delete this excavator day? The change history keeps a record of it.',
+  'exc.colDate': 'Date', 'exc.colExpl': 'Expl hrs', 'exc.colProd': 'Prod hrs', 'exc.colIdle': 'Idle hrs',
+  'exc.colTotal': 'Total hrs', 'exc.colFuelExc': 'Fuel exc.', 'exc.colFuelMill': 'Fuel mill', 'exc.colNotes': 'Notes',
+  'exc.none': 'No excavator days yet',
+  'inputs.primaryMining': 'Primary Mining', 'inputs.sackKg': 'Sack Weight', 'inputs.cutoff': 'Production Cut-off',
+  'inputs.sackKgPositive': 'Sack weight must be more than 0 kg.',
+  'inputs.excavatorOn': 'Excavator on this site',
+  'inputs.excavatorHelp': 'Shows the Excavator tab, fuel and machine hours left, and the Fuel and Machine Rental expense types.',
+  'hist.shaft': 'Pit or shaft', 'hist.sackCount': 'Sack count', 'hist.millingResult': 'Milling result',
+  'hist.excavatorDay': 'Excavator day',
+  'hist.f.sack_kg': 'Sack Weight', 'hist.f.cutoff_g_per_sack': 'Production Cut-off', 'hist.f.excavator_on': 'Excavator on this site',
+  'common.yes': 'Yes', 'common.no': 'No',
 };
 
 const SUPPORTED_LOCALES = [
@@ -702,7 +861,7 @@ function Login({ onLogin }) {
 // ============================================================
 // LAYOUT / NAV
 // ============================================================
-function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogout, children }) {
+function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogout, excavatorOn, children }) {
   const { t, locale, setLocale } = useT();
 
   const tabs = [
@@ -715,6 +874,15 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
       { id: 'inputs', label: t('nav.inputs') },
       { id: 'language', label: t('nav.language') },
     ] : []),
+  ];
+  // Primary sites swap Daily Logs and Weekly for their own tabs; the rest stay the same.
+  const siteTabs = !isPrimarySite(site) ? tabs : [
+    tabs[0],
+    { id: 'shafts', label: t('nav.shafts') },
+    { id: 'sacks', label: t('nav.sacks') },
+    { id: 'results', label: t('nav.results') },
+    ...(excavatorOn ? [{ id: 'excavator', label: t('nav.excavator') }] : []),
+    ...tabs.filter((tab) => !['dashboard', 'daily', 'weekly'].includes(tab.id)),
   ];
 
   return (
@@ -732,6 +900,8 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
                 localStorage.removeItem('armada_demo_daily_logs');
                 localStorage.removeItem('armada_demo_transactions');
                 localStorage.removeItem('armada_demo_inputs');
+                ['sites', 'shafts', 'sack_counts', 'milling_results', 'excavator_logs']
+                  .forEach((table) => localStorage.removeItem(`armada_demo_${table}`));
                 window.location.reload();
               }
             }} className="underline bg-amber-800 hover:bg-amber-900 border border-amber-600 px-2 py-0.5 rounded text-[10px] uppercase font-bold transition-colors">
@@ -774,7 +944,7 @@ function Shell({ user, profile, site, sites, onSwitchSite, page, setPage, onLogo
             {site?.location && <div className="text-xs text-stone-500">{site.location}</div>}
           </div>
           <nav className="flex gap-1 overflow-x-auto">
-            {tabs.map((tab) => (
+            {siteTabs.map((tab) => (
               <button key={tab.id} onClick={() => setPage(tab.id)}
                 className={`px-4 py-3 text-xs uppercase tracking-widest whitespace-nowrap border-b-2 transition-colors ${
                   page === tab.id ? 'border-amber-700 text-stone-900' : 'border-transparent text-stone-500 hover:text-stone-800'
@@ -1085,10 +1255,28 @@ const HISTORY_FIELDS = {
     'gold_price', 'fuel_price', 'rental_rate', 'royalty_rate', 'landowner_share',
     'target_cash_reserve', 'efficiency_threshold', 'opening_cash', 'machine_hrs_opening',
     'fuel_barrels_opening', 'fuel_per_barrel', 'cleaning_fuel_rate', 'prep_fuel_rate',
+    'sack_kg', 'cutoff_g_per_sack', 'excavator_on',
   ].map((key) => [key, `hist.f.${key}`]),
+  shafts: [
+    ['name', 'shafts.name'], ['kind', 'shafts.kind'], ['opened_on', 'shafts.openedOn'],
+    ['production_from', 'shafts.productionFrom'], ['closed_on', 'shafts.closedOn'], ['notes', 'shafts.notes'],
+  ],
+  sack_counts: [['date', 'sacks.date'], ['shaft_id', 'sacks.shaft'], ['sacks', 'sacks.sacks'], ['notes', 'sacks.notes']],
+  milling_results: [
+    ['date', 'results.date'], ['shaft_id', 'results.shaft'], ['sacks_milled', 'results.sacksMilled'],
+    ['gold_g', 'results.gold'], ['notes', 'results.notes'],
+  ],
+  excavator_logs: [
+    ['date', 'exc.date'], ['exploration_hrs', 'exc.exploration'], ['production_hrs', 'exc.production'],
+    ['idle_hrs', 'exc.idle'], ['excavator_fuel_barrels', 'exc.fuelExcavator'], ['mill_fuel_barrels', 'exc.fuelMill'],
+    ['notes', 'exc.notes'],
+  ],
 };
 // Already in the entry's title line, so not repeated for added or deleted records.
-const HISTORY_TITLE_FIELDS = { daily_logs: ['date'], transactions: ['date', 'category', 'amount'] };
+const HISTORY_TITLE_FIELDS = {
+  daily_logs: ['date'], transactions: ['date', 'category', 'amount'],
+  shafts: ['name'], sack_counts: ['date', 'shaft_id'], milling_results: ['date', 'shaft_id'], excavator_logs: ['date'],
+};
 // Bookkeeping columns that change on every save and mean nothing to readers.
 const HISTORY_IGNORED_FIELDS = new Set([
   'id', 'site_id', 'created_at', 'updated_at', 'synced_at', 'created_offline',
@@ -1103,14 +1291,19 @@ const fmtHistoryValue = (v) => {
   return String(v);
 };
 
-function HistoryEntry({ entry }) {
+function HistoryEntry({ entry, shaftNames = {} }) {
   const { t } = useT();
   const before = asRecord(entry.old_data);
   const after = asRecord(entry.new_data);
   const row = entry.new_data ? after : before;
   const fields = HISTORY_FIELDS[entry.table_name] || [];
   const labelOf = (key) => { const f = fields.find(([k]) => k === key); return f ? t(f[1]) : key; };
-  const valueOf = (key, v) => (key === 'type' && (v === 'expense' || v === 'credit') ? t(`tx.${v}`) : fmtHistoryValue(v));
+  const valueOf = (key, v) => {
+    if (key === 'shaft_id' && shaftNames[v]) return shaftNames[v];
+    if (key === 'kind' && (v === 'pit' || v === 'shaft')) return t(`shafts.${v}`);
+    if (key === 'excavator_on' && typeof v === 'boolean') return t(v ? 'common.yes' : 'common.no');
+    return key === 'type' && (v === 'expense' || v === 'credit') ? t(`tx.${v}`) : fmtHistoryValue(v);
+  };
 
   let lines;
   if (entry.action === 'update') {
@@ -1136,6 +1329,10 @@ function HistoryEntry({ entry }) {
     title = `${t('hist.transaction')} · ${row.date || '—'} · ${row.category || '—'} · ${fmtETB(Number(row.amount))} ETB`;
   }
   if (entry.table_name === 'inputs') title = t('hist.inputs');
+  if (entry.table_name === 'shafts') title = `${t('hist.shaft')} · ${row.name || '—'}`;
+  if (entry.table_name === 'sack_counts') title = `${t('hist.sackCount')} · ${row.date || '—'} · ${valueOf('shaft_id', row.shaft_id)}`;
+  if (entry.table_name === 'milling_results') title = `${t('hist.millingResult')} · ${row.date || '—'} · ${valueOf('shaft_id', row.shaft_id)}`;
+  if (entry.table_name === 'excavator_logs') title = `${t('hist.excavatorDay')} · ${row.date || '—'}`;
 
   const who = entry.changed_by ? (entry.changed_by_name || t('hist.unknownUser')) : t('hist.system');
 
@@ -1158,9 +1355,10 @@ function HistoryEntry({ entry }) {
   );
 }
 
-function ChangeHistory({ site }) {
+function ChangeHistory({ site, shafts = [] }) {
   const { t } = useT();
   const demo = isDemoActive();
+  const shaftNames = useMemo(() => Object.fromEntries(shafts.map((s) => [s.id, s.name])), [shafts]);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -1202,7 +1400,7 @@ function ChangeHistory({ site }) {
             <div className="bg-white border border-stone-200 px-3 py-8 text-center text-sm text-stone-400">{t('hist.empty')}</div>
           )}
           <div className="space-y-2">
-            {entries.map((e) => <HistoryEntry key={e.id} entry={e} />)}
+            {entries.map((e) => <HistoryEntry key={e.id} entry={e} shaftNames={shaftNames} />)}
           </div>
           {loading && <div className="text-xs text-stone-500 py-2">{t('hist.loading')}</div>}
           {hasMore && !loading && (
@@ -1381,6 +1579,1024 @@ function Tile({ label, value, unit, sub, alert }) {
         <div className="text-[10px] uppercase tracking-wider text-stone-500">{unit}</div>
       </div>
       {sub && <div className={`text-[10px] mt-0.5 ${alert ? 'text-red-600' : 'text-stone-500'}`}>{sub}</div>}
+    </div>
+  );
+}
+
+// ============================================================
+// PRIMARY SITES (pits & shafts, sacks, milling results, excavator)
+// ============================================================
+// Who may add pits, shafts, sacks, results and excavator days (the database checks the same).
+const canAddPrimary = (profile) => profile?.role === 'super_admin' || profile?.role === 'site_manager';
+// The super admin can change any entry; a site manager only the entries they made (same rule as the database).
+const canEditPrimary = (profile, row) => profile.role === 'super_admin' || (profile.role === 'site_manager' && row.logged_by === profile.id);
+// A result counts as production from the day its pit or shaft was switched to production.
+const resultPhase = (shaft, date) => (shaft?.production_from && date >= shaft.production_from ? 'production' : 'exploration');
+const sumOf = (rows, key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+const byNewest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+const openFirst = (a, b) => (Number(!!a.closed_on) - Number(!!b.closed_on)) || a.name.localeCompare(b.name);
+const EXCAVATOR_FIELDS = ['exploration_hrs', 'production_hrs', 'idle_hrs', 'excavator_fuel_barrels', 'mill_fuel_barrels'];
+
+// Sacks, gold and readiness for production, per pit or shaft.
+function shaftStats(shafts, sackCounts, results, cutoff) {
+  return shafts.map((s) => {
+    const own = results.filter((r) => r.shaft_id === s.id);
+    const dug = sumOf(sackCounts.filter((c) => c.shaft_id === s.id), 'sacks');
+    const milled = sumOf(own, 'sacks_milled');
+    const gold = sumOf(own, 'gold_g');
+    // Readiness looks at the last 3 results, so one lucky sack doesn't decide it.
+    const last3 = [...own].sort(byNewest).slice(0, 3);
+    const last3Sacks = sumOf(last3, 'sacks_milled');
+    const last3Gps = last3Sacks > 0 ? sumOf(last3, 'gold_g') / last3Sacks : 0;
+    return {
+      shaft: s, dug, milled, waiting: dug - milled, gold,
+      gPerSack: milled > 0 ? gold / milled : null,
+      last3Gps,
+      ready: !s.production_from && !s.closed_on && last3.length === 3 && last3Gps >= cutoff,
+    };
+  });
+}
+
+function primarySnap(inputs, shafts, sackCounts, results, excavatorLogs, transactions) {
+  if (!inputs) return null;
+  const excavatorOn = !!inputs.excavator_on;
+
+  // Gold, money, fuel and machine hours come from weeklySnap, the formulas the alluvial sites use.
+  // Milling results carry the gold; excavator days carry the hours and fuel used, in the fields weeklySnap reads.
+  const rows = [
+    ...results.map((r) => ({ date: r.date, gold_g: r.gold_g })),
+    ...excavatorLogs.map((l) => ({
+      date: l.date, cleaning_hrs: l.exploration_hrs, prep_hrs: l.production_hrs, idle_hrs: l.idle_hrs,
+      fuel_received_barrels: (Number(l.excavator_fuel_barrels) || 0) + (Number(l.mill_fuel_barrels) || 0),
+    })),
+  ];
+  const latest = (list) => list.map((r) => r.date).filter(Boolean).reduce((a, b) => (a > b ? a : b), '');
+  const lastEntryDate = latest([...rows, ...sackCounts]);
+  // weeklySnap counts everything dated up to 6 days after the date it gets, so the latest date counts it all.
+  const snap = weeklySnap(inputs, rows, transactions, latest([...rows, ...sackCounts, ...transactions]) || todayISO());
+
+  const perShaft = shaftStats(shafts, sackCounts, results, Number(inputs.cutoff_g_per_sack));
+  const shaftById = Object.fromEntries(shafts.map((s) => [s.id, s]));
+  let explorationGold = 0;
+  let productionGold = 0;
+  results.forEach((r) => {
+    if (resultPhase(shaftById[r.shaft_id], r.date) === 'production') productionGold += Number(r.gold_g) || 0;
+    else explorationGold += Number(r.gold_g) || 0;
+  });
+  const source = (kind) => {
+    const list = perShaft.filter((p) => p.shaft.kind === kind);
+    return { count: list.length, dug: sumOf(list, 'dug'), milled: sumOf(list, 'milled'), gold: sumOf(list, 'gold') };
+  };
+
+  const sacksDug = sumOf(sackCounts, 'sacks');
+  const sacksMilled = sumOf(results, 'sacks_milled');
+  const gPerSack = sacksMilled > 0 ? snap.grossGold / sacksMilled : 0;
+  const sackTonnes = Number(inputs.sack_kg) / 1000;
+
+  // Days left use the last 7 excavator days, as the alluvial Dashboard does with its logs.
+  const perDay = {};
+  excavatorLogs.forEach((l) => {
+    const d = perDay[l.date] || (perDay[l.date] = { fuel: 0, hrs: 0 });
+    d.fuel += (Number(l.excavator_fuel_barrels) || 0) + (Number(l.mill_fuel_barrels) || 0);
+    d.hrs += (Number(l.exploration_hrs) || 0) + (Number(l.production_hrs) || 0);
+  });
+  const last7 = Object.keys(perDay).sort().reverse().slice(0, 7).map((d) => perDay[d]);
+  const avgDailyFuel = last7.length > 0 ? sumOf(last7, 'fuel') / last7.length : 0;
+  const avgDailyHrs = last7.length > 0 ? sumOf(last7, 'hrs') / last7.length : 0;
+
+  // Without an excavator there is no fuel or machine-hour stock to watch: cash and profit only.
+  let { status, reasons } = snap;
+  if (!excavatorOn) {
+    const lowCash = snap.cashOnHand < Number(inputs.target_cash_reserve);
+    reasons = [...(lowCash ? ['Cash'] : []), ...(snap.profit < 0 ? ['Profit'] : [])];
+    status = snap.profit < 0 ? 'critical' : lowCash ? 'caution' : 'healthy';
+  }
+
+  return {
+    ...snap, status, reasons, excavatorOn, lastEntryDate,
+    landownerGold: snap.grossGold - snap.netSaleableGold,
+    explorationGold, productionGold,
+    sacksDug, sacksMilled, sacksWaiting: sacksDug - sacksMilled,
+    gPerSack, gPerTonne: sackTonnes > 0 ? gPerSack / sackTonnes : 0,
+    costPerSack: sacksMilled > 0 ? snap.totalCosts / sacksMilled : 0,
+    perShaft, pits: source('pit'), handDug: source('shaft'),
+    explorationHrs: sumOf(excavatorLogs, 'exploration_hrs'),
+    productionHrs: sumOf(excavatorLogs, 'production_hrs'),
+    idleHrs: sumOf(excavatorLogs, 'idle_hrs'),
+    fuelRunwayDays: avgDailyFuel > 0 ? snap.fuelRemainingBarrels / avgDailyFuel : null,
+    machineRunwayDays: avgDailyHrs > 0 ? snap.machineHrsRemaining / avgDailyHrs : null,
+  };
+}
+
+function PhaseBadge({ phase }) {
+  const { t } = useT();
+  return (
+    <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap ${
+      phase === 'production' ? 'bg-emerald-50 text-emerald-700' : 'bg-sky-50 text-sky-700'}`}>
+      {t(`phase.${phase}`)}
+    </span>
+  );
+}
+
+function ShaftKindBadge({ kind }) {
+  const { t } = useT();
+  return (
+    <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap ${
+      kind === 'pit' ? 'bg-amber-50 text-amber-800' : 'bg-stone-100 text-stone-600'}`}>
+      {kind === 'pit' ? t('shafts.pitShort') : t('shafts.shaftShort')}
+    </span>
+  );
+}
+
+const LABEL_CLS = 'block text-[10px] uppercase tracking-widest text-stone-500 mb-1';
+const INPUT_CLS = 'w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700';
+const SAVE_CLS = 'bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400';
+const DELETE_CLS = 'border border-red-300 text-red-700 px-6 py-2 text-xs uppercase tracking-widest hover:bg-red-50 disabled:opacity-50';
+const CANCEL_CLS = 'px-6 py-2 text-xs uppercase tracking-widest text-stone-600 hover:text-stone-900 border border-stone-300';
+const EDIT_CLS = 'ml-2 px-2 py-1 border border-stone-300 text-[10px] uppercase tracking-widest text-stone-600 hover:border-amber-700 hover:text-amber-700';
+const SMALL_CLS = 'px-3 py-1.5 border border-stone-300 text-[10px] uppercase tracking-widest text-stone-600 hover:border-amber-700 hover:text-amber-700';
+
+function ErrorBox({ error }) {
+  return error ? <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 mt-3">{error}</div> : null;
+}
+
+function NotesField({ label, value, onChange }) {
+  return (
+    <div className="mt-3">
+      <label className={LABEL_CLS}>{label}</label>
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} className={INPUT_CLS} rows={2} />
+    </div>
+  );
+}
+
+function PrimaryDashboard({ inputs, shafts, sackCounts, results, excavatorLogs, transactions }) {
+  const { t } = useT();
+  const calc = useMemo(() => primarySnap(inputs, shafts, sackCounts, results, excavatorLogs, transactions),
+    [inputs, shafts, sackCounts, results, excavatorLogs, transactions]);
+
+  if (!inputs) return <div className="text-sm text-stone-500">Loading inputs…</div>;
+  if (!calc) return null;
+
+  const sc = STATUS_COLORS[calc.status];
+  const landownerPct = Math.round(Number(inputs.landowner_share) * 100);
+
+  return (
+    <div className="space-y-4">
+      <div className={`${sc.bg} ${sc.border} border-l-4 px-4 py-3 flex items-center gap-3`}>
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sc.dot}`} />
+        <div>
+          <div className={`text-xs uppercase tracking-widest font-semibold ${sc.text}`}>
+            {t('status.siteStatus')}: {t(`status.${calc.status}`)}
+            {calc.reasons.length > 0 && ` (${calc.reasons.join(', ')})`}
+          </div>
+          <div className="text-xs text-stone-600 mt-0.5">
+            {t('primary.lastEntry')}: {calc.lastEntryDate || t('primary.noEntriesYet')} · {shafts.length} {t('primary.pitsShafts')} · {calc.txCount} {t('status.transactions')}
+          </div>
+        </div>
+      </div>
+
+      <Section title={t('section.workingCapital')}>
+        <div className={`grid grid-cols-2 gap-px bg-stone-200 ${calc.excavatorOn ? 'lg:grid-cols-4' : ''}`}>
+          <Tile label={t('tile.cashOnHand')} value={fmtETB(calc.cashOnHand)} unit="ETB" />
+          <Tile label={t('tile.goldOnHand')} value={fmtNum(calc.goldOnHand, 1)} unit={t('tile.grams')}
+            sub={`${fmtNum(calc.goldSold, 1)}g ${t('tile.goldSold')}`} />
+          {calc.excavatorOn && (
+            <>
+              <Tile label={t('tile.fuelRemaining')} value={fmtBarrels(calc.fuelRemainingBarrels)} unit={t('tile.barrels')}
+                sub={calc.fuelRunwayDays !== null ? `${fmtNum(calc.fuelRunwayDays, 1)} ${t('tile.days')}` : '—'}
+                alert={calc.fuelRemainingBarrels < 7} />
+              <Tile label={t('tile.machineHours')} value={fmtNum(calc.machineHrsRemaining, 0)} unit={t('tile.hours')}
+                sub={calc.machineRunwayDays !== null ? `${fmtNum(calc.machineRunwayDays, 1)} ${t('tile.days')}` : '—'}
+                alert={calc.machineHrsRemaining < 100} />
+            </>
+          )}
+        </div>
+      </Section>
+
+      <Section title={t('section.gold')}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
+          <Tile label={t('tile.goldProduced')} value={fmtNum(calc.grossGold, 1)} unit={t('tile.grams')}
+            sub={`${t('phase.exploration')} ${fmtNum(calc.explorationGold, 1)} · ${t('phase.production')} ${fmtNum(calc.productionGold, 1)}`} />
+          <Tile label={`${t('tile.landowner')} ${landownerPct}%`} value={fmtNum(calc.landownerGold, 1)} unit={t('tile.grams')} />
+          <Tile label={`${t('tile.investors')} ${100 - landownerPct}%`} value={fmtNum(calc.netSaleableGold, 1)} unit={t('tile.grams')} />
+          <Tile label={t('tile.avgGrade')} value={fmtNum(calc.gPerSack, 2)} unit="g/sack" sub={`${fmtNum(calc.gPerTonne, 1)} g/t`} />
+        </div>
+      </Section>
+
+      <Section title={t('section.sacks')}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
+          <Tile label={t('tile.sacksDug')} value={fmtNum(calc.sacksDug, 0)} unit={t('tile.sacks')} />
+          <Tile label={t('tile.sacksMilled')} value={fmtNum(calc.sacksMilled, 0)} unit={t('tile.sacks')} />
+          <Tile label={t('tile.sacksWaiting')} value={fmtNum(calc.sacksWaiting, 0)} unit={t('tile.sacks')}
+            sub={t('tile.dugMinusMilled')} alert={calc.sacksWaiting < 0} />
+          <Tile label={t('tile.costPerSack')} value={fmtETB(calc.costPerSack)} unit="ETB" sub={t('tile.perSackMilled')} />
+        </div>
+      </Section>
+
+      {calc.excavatorOn && (
+        <Section title={t('section.excavatorHours')}>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
+            <Tile label={t('phase.exploration')} value={fmtNum(calc.explorationHrs, 0)} unit="hrs" />
+            <Tile label={t('phase.production')} value={fmtNum(calc.productionHrs, 0)} unit="hrs" />
+            <Tile label={t('tile.idle')} value={fmtNum(calc.idleHrs, 0)} unit="hrs" />
+            <Tile label={t('tile.totalHours')} value={fmtNum(calc.totalHrs, 0)} unit="hrs" />
+          </div>
+        </Section>
+      )}
+
+      {calc.pits.count > 0 && (
+        <Section title={t('section.goldSource')}>
+          <div className="bg-white border border-stone-200 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-stone-100 text-stone-600 uppercase tracking-wider text-[10px]">
+                <tr>
+                  <th className="px-3 py-2 text-left"></th>
+                  <th className="px-3 py-2 text-right">{t('tile.sacksDug')}</th>
+                  <th className="px-3 py-2 text-right">{t('tile.sacksMilled')}</th>
+                  <th className="px-3 py-2 text-right">{t('results.colGold')}</th>
+                  <th className="px-3 py-2 text-right">{t('results.colGps')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[['source.pits', calc.pits], ['source.shafts', calc.handDug]].map(([key, s]) => (
+                  <tr key={key} className="border-t border-stone-100">
+                    <td className="px-3 py-2 font-medium text-stone-900 whitespace-nowrap">{t(key)}</td>
+                    <td className="px-3 py-2 text-right">{fmtNum(s.dug, 0)}</td>
+                    <td className="px-3 py-2 text-right">{fmtNum(s.milled, 0)}</td>
+                    <td className="px-3 py-2 text-right font-medium text-amber-700">{fmtNum(s.gold, 1)}</td>
+                    <td className="px-3 py-2 text-right">{s.milled > 0 ? fmtNum(s.gold / s.milled, 2) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      <Section title={t('section.financials')}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-stone-200">
+          <Tile label={t('tile.revenue')} value={fmtETB(calc.goldSaleRevenue)} unit="ETB" sub={t('tile.fromSales')} />
+          <Tile label={t('tile.operatingCosts')} value={fmtETB(calc.totalCosts)} unit="ETB" sub={`${fmtETB(calc.costPerGram)} ETB/g`} alert={calc.costPerGram > Number(inputs.gold_price)} />
+          <Tile label={t('tile.profitShare')} value={fmtETB(calc.profitSharePaid)} unit="ETB" />
+          <Tile label={t('tile.netProfit')} value={fmtETB(calc.profit)} unit="ETB" alert={calc.profit < 0} />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function Shafts({ site, shafts, sackCounts, results, inputs, profile, onRefresh }) {
+  const { t } = useT();
+  const blank = { name: '', kind: 'shaft', opened_on: todayISO(), production_from: '', closed_on: '', notes: '' };
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+  // A quick change from a card: switch to production, or close, from a chosen date.
+  const [quick, setQuick] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const formRef = useRef(null);
+  const canAdd = canAddPrimary(profile);
+  const cutoff = Number(inputs?.cutoff_g_per_sack);
+  const sackTonnes = Number(inputs?.sack_kg) / 1000;
+  const stats = useMemo(() => Object.fromEntries(shaftStats(shafts, sackCounts, results, cutoff).map((p) => [p.shaft.id, p])),
+    [shafts, sackCounts, results, cutoff]);
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditing(null);
+    setError('');
+    setForm(blank);
+  };
+
+  const startEdit = (s) => {
+    setError('');
+    setQuick(null);
+    setEditing(s);
+    setForm({
+      name: s.name, kind: s.kind, opened_on: s.opened_on || '', production_from: s.production_from || '',
+      closed_on: s.closed_on || '', notes: s.notes || '',
+    });
+    setShowForm(true);
+  };
+
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  // Changes only this one pit or shaft and keeps who originally entered it.
+  const update = async (id, changes) => {
+    const { data, error } = await supabase.from('shafts')
+      .update({ ...changes, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select();
+    if (error) { setError(error.message); return false; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return false; }
+    return true;
+  };
+
+  const handleSave = async () => {
+    setError('');
+    const name = form.name.trim();
+    if (!name) { setError(t('shafts.nameRequired')); return; }
+    if (shafts.some((s) => s.id !== editing?.id && s.name.trim().toLowerCase() === name.toLowerCase())) {
+      setError(t('shafts.nameTaken'));
+      return;
+    }
+    setSaving(true);
+    const fields = {
+      name, kind: form.kind, opened_on: form.opened_on || todayISO(),
+      production_from: form.production_from || null, closed_on: form.closed_on || null, notes: form.notes || null,
+    };
+    if (editing) {
+      const done = await update(editing.id, fields);
+      setSaving(false);
+      if (!done) return;
+    } else {
+      const { error } = await supabase.from('shafts').insert({ ...fields, site_id: site.id, logged_by: profile.id });
+      setSaving(false);
+      if (error) { setError(error.message); return; }
+    }
+    closeForm();
+    onRefresh();
+  };
+
+  const confirmQuick = async () => {
+    setError('');
+    setSaving(true);
+    const done = await update(quick.id, { [quick.field]: quick.date });
+    setSaving(false);
+    if (!done) return;
+    setQuick(null);
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    setError('');
+    // A pit or shaft with sacks or results stays, so every entry keeps its source. It can be closed instead.
+    if (sackCounts.some((c) => c.shaft_id === editing.id) || results.some((r) => r.shaft_id === editing.id)) {
+      setError(t('shafts.hasData'));
+      return;
+    }
+    if (!window.confirm(`${t('shafts.confirmDelete')}\n${editing.name}`)) return;
+    setSaving(true);
+    const { data, error } = await supabase.from('shafts').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (error) { setError(['23001', '23503'].includes(error.code) ? t('shafts.hasData') : error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeForm();
+    onRefresh();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('shafts.title')}</div>
+          <div className="text-sm text-stone-600">{shafts.length} {t('primary.pitsShafts')}</div>
+        </div>
+        {canAdd && (
+          <button
+            onClick={() => (showForm ? closeForm() : setShowForm(true))}
+            className="bg-stone-900 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-700 transition-colors"
+          >
+            {showForm ? t('common.cancel') : t('shafts.new')}
+          </button>
+        )}
+      </div>
+
+      {showForm && (
+        <div ref={formRef} className="bg-white border border-stone-200 p-4 mb-4">
+          {editing && (
+            <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('shafts.editing')} {editing.name}</div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={t('shafts.name')} value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+            <div>
+              <label className={LABEL_CLS}>{t('shafts.kind')}</label>
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} className={INPUT_CLS}>
+                <option value="pit">{t('shafts.pit')}</option>
+                <option value="shaft">{t('shafts.shaft')}</option>
+              </select>
+            </div>
+            <Field label={t('shafts.openedOn')} type="date" value={form.opened_on} onChange={(v) => setForm({ ...form, opened_on: v })} />
+            <Field label={t('shafts.productionFrom')} type="date" value={form.production_from} onChange={(v) => setForm({ ...form, production_from: v })} />
+            {editing && (
+              <Field label={t('shafts.closedOn')} type="date" value={form.closed_on} onChange={(v) => setForm({ ...form, closed_on: v })} />
+            )}
+          </div>
+          <div className="text-[10px] text-stone-500 mt-2">{t('shafts.formHint')}</div>
+          <NotesField label={t('shafts.notes')} value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
+          <ErrorBox error={error} />
+          <div className="flex flex-wrap gap-3 mt-3">
+            <button onClick={handleSave} disabled={saving} className={SAVE_CLS}>
+              {saving ? t('shafts.saving') : editing ? t('edit.saveChanges') : t('shafts.save')}
+            </button>
+            {editing && profile.role === 'super_admin' && (
+              <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>
+            )}
+          </div>
+        </div>
+      )}
+      {!showForm && error && <div className="mb-4"><ErrorBox error={error} /></div>}
+
+      {shafts.length === 0 && (
+        <div className="bg-white border border-stone-200 px-3 py-8 text-center text-sm text-stone-400">{t('shafts.none')}</div>
+      )}
+      <div className="space-y-2">
+        {[...shafts].sort(openFirst).map((s) => {
+          const st = stats[s.id];
+          return (
+            <div key={s.id} className="bg-white border border-stone-200 px-4 py-3">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-sm font-semibold ${s.closed_on ? 'text-stone-500' : 'text-stone-900'}`}>{s.name}</span>
+                  <ShaftKindBadge kind={s.kind} />
+                </div>
+                {s.closed_on ? (
+                  <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap bg-stone-100 text-stone-500">
+                    {t('shafts.closed')} {s.closed_on}
+                  </span>
+                ) : s.production_from ? (
+                  <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap bg-emerald-50 text-emerald-700">
+                    {t('shafts.productionSince')} {s.production_from}
+                  </span>
+                ) : (
+                  <PhaseBadge phase="exploration" />
+                )}
+              </div>
+              <div className="text-xs text-stone-600 mt-1">
+                {t('shafts.dug')} {fmtNum(st.dug, 0)} · {t('shafts.milled')} {fmtNum(st.milled, 0)} · {t('shafts.waiting')} {fmtNum(st.waiting, 0)}
+              </div>
+              <div className="text-xs text-stone-600">
+                {t('shafts.gold')} {fmtNum(st.gold, 1)} g
+                {st.gPerSack !== null && ` · ${fmtNum(st.gPerSack, 2)} g/sack (${fmtNum(st.gPerSack / sackTonnes, 1)} g/t)`}
+              </div>
+              {s.notes && <div className="text-xs text-stone-500 mt-1">{s.notes}</div>}
+              {st.ready && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 mt-2">
+                  {t('shafts.readyTitle')} {t('shafts.readyAvg')} {fmtNum(st.last3Gps, 2)} g/sack. {t('shafts.readyCutoff')} {fmtNum(cutoff, 2)}.
+                </div>
+              )}
+              {canAdd && quick?.id === s.id && (
+                <div className="flex items-end gap-2 mt-2 flex-wrap">
+                  <div>
+                    <label className={LABEL_CLS}>{quick.field === 'production_from' ? t('shafts.switchDate') : t('shafts.closeDate')}</label>
+                    <input type="date" value={quick.date} onChange={(e) => setQuick({ ...quick, date: e.target.value })}
+                      className="border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
+                  </div>
+                  <button onClick={confirmQuick} disabled={saving || !quick.date}
+                    className="bg-amber-700 text-white px-4 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">
+                    {t('shafts.confirm')}
+                  </button>
+                  <button onClick={() => setQuick(null)} className="px-4 py-2 text-xs uppercase tracking-widest text-stone-600 border border-stone-300">
+                    {t('common.cancel')}
+                  </button>
+                </div>
+              )}
+              {canAdd && quick?.id !== s.id && (
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {!s.production_from && !s.closed_on && (
+                    <button onClick={() => { setError(''); setQuick({ id: s.id, field: 'production_from', date: todayISO() }); }}
+                      className={st.ready ? 'px-3 py-1.5 bg-amber-700 text-white text-[10px] uppercase tracking-widest hover:bg-amber-800' : SMALL_CLS}>
+                      {t('shafts.switch')}
+                    </button>
+                  )}
+                  {!s.closed_on && (
+                    <button onClick={() => { setError(''); setQuick({ id: s.id, field: 'closed_on', date: todayISO() }); }} className={SMALL_CLS}>
+                      {t('shafts.close')}
+                    </button>
+                  )}
+                  <button onClick={() => startEdit(s)} className={SMALL_CLS}>{t('edit.edit')}</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SackCounts({ site, shafts, sackCounts, profile, onRefresh }) {
+  const { t } = useT();
+  const [date, setDate] = useState(todayISO());
+  const [counts, setCounts] = useState({});
+  const [notes, setNotes] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const editRef = useRef(null);
+  const canAdd = canAddPrimary(profile);
+  const shaftById = useMemo(() => Object.fromEntries(shafts.map((s) => [s.id, s])), [shafts]);
+  const nameOf = (id) => shaftById[id]?.name || '—';
+  const byName = [...shafts].sort((a, b) => a.name.localeCompare(b.name));
+  // A closed pit or shaft takes no sacks after the day it closed.
+  const open = byName.filter((s) => !s.closed_on || date <= s.closed_on);
+
+  const handleSave = async () => {
+    setError('');
+    const entered = open.filter((s) => counts[s.id] !== undefined && counts[s.id] !== '');
+    if (entered.some((s) => !Number.isInteger(Number(counts[s.id])) || Number(counts[s.id]) < 0)) {
+      setError(t('sacks.whole'));
+      return;
+    }
+    const rows = entered.filter((s) => Number(counts[s.id]) > 0).map((s) => ({
+      site_id: site.id, logged_by: profile.id, shaft_id: s.id, date, sacks: Number(counts[s.id]), notes: notes || null,
+    }));
+    if (rows.length === 0) { setError(t('sacks.enterOne')); return; }
+    // A second count for the same pit or shaft and day (another shift) is allowed, but asked about first.
+    const repeats = rows.filter((r) => sackCounts.some((c) => c.shaft_id === r.shaft_id && c.date === r.date)).map((r) => nameOf(r.shaft_id));
+    if (repeats.length > 0 && !window.confirm(`${t('sacks.confirmSecond')} ${repeats.join(', ')}\n${t('sacks.addAnyway')}`)) return;
+    setSaving(true);
+    const { error } = await supabase.from('sack_counts').insert(rows);
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    setCounts({});
+    setNotes('');
+    onRefresh();
+  };
+
+  const startEdit = (c) => {
+    setError('');
+    setEditing(c);
+    setEditForm({ date: c.date, shaft_id: c.shaft_id, sacks: String(c.sacks ?? ''), notes: c.notes || '' });
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    setEditForm(null);
+    setError('');
+  };
+
+  useEffect(() => {
+    if (editing) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  // An edit changes only this one count and keeps who originally entered it.
+  const saveEdit = async () => {
+    setError('');
+    const sacks = Number(editForm.sacks);
+    if (editForm.sacks === '' || !Number.isInteger(sacks) || sacks <= 0) { setError(t('sacks.editPositive')); return; }
+    setSaving(true);
+    const { data, error } = await supabase.from('sack_counts')
+      .update({ date: editForm.date, shaft_id: editForm.shaft_id, sacks, notes: editForm.notes || null, updated_at: new Date().toISOString() })
+      .eq('id', editing.id)
+      .select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeEdit();
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`${t('sacks.confirmDelete')}\n${editing.date} · ${nameOf(editing.shaft_id)} · ${editing.sacks}`)) return;
+    setError('');
+    setSaving(true);
+    const { data, error } = await supabase.from('sack_counts').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeEdit();
+    onRefresh();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('sacks.title')}</div>
+        <div className="text-sm text-stone-600">
+          {sackCounts.length} {t('sacks.entries')} · {fmtNum(sumOf(sackCounts, 'sacks'), 0)} {t('tile.sacks')}
+        </div>
+      </div>
+
+      {canAdd && !editing && (shafts.length === 0 ? (
+        <div className="bg-white border border-stone-200 px-4 py-3 text-sm text-stone-500">{t('sacks.noShafts')}</div>
+      ) : (
+        <div className="bg-white border border-stone-200 p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={t('sacks.date')} type="date" value={date} onChange={setDate} />
+          </div>
+          <div className={`${LABEL_CLS} mt-4`}>{t('sacks.perShaft')}</div>
+          {open.length === 0 && <div className="text-xs text-stone-500 py-2">{t('sacks.noneOpen')}</div>}
+          <div className="divide-y divide-stone-100">
+            {open.map((s) => (
+              <div key={s.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  <span className="text-sm text-stone-900">{s.name}</span>
+                  <PhaseBadge phase={resultPhase(s, date)} />
+                </div>
+                <input type="number" min="0" step="1" inputMode="numeric" placeholder="0"
+                  value={counts[s.id] ?? ''} onChange={(e) => setCounts({ ...counts, [s.id]: e.target.value })}
+                  className="w-24 flex-shrink-0 border border-stone-300 px-3 py-2 text-sm text-right focus:outline-none focus:border-amber-700" />
+              </div>
+            ))}
+          </div>
+          {open.length < shafts.length && <div className="text-[10px] text-stone-400 mt-1">{t('sacks.closedHidden')}</div>}
+          <NotesField label={t('sacks.notes')} value={notes} onChange={setNotes} />
+          <ErrorBox error={error} />
+          <button onClick={handleSave} disabled={saving} className={`mt-3 ${SAVE_CLS}`}>
+            {saving ? t('sacks.saving') : t('sacks.save')}
+          </button>
+        </div>
+      ))}
+
+      {editing && (
+        <div ref={editRef} className="bg-white border border-stone-200 p-4">
+          <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('sacks.editing')} {editing.date}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={t('sacks.date')} type="date" value={editForm.date} onChange={(v) => setEditForm({ ...editForm, date: v })} />
+            <div>
+              <label className={LABEL_CLS}>{t('sacks.shaft')}</label>
+              <select value={editForm.shaft_id} onChange={(e) => setEditForm({ ...editForm, shaft_id: e.target.value })} className={INPUT_CLS}>
+                {byName.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <Field label={t('sacks.sacks')} type="number" value={editForm.sacks} onChange={(v) => setEditForm({ ...editForm, sacks: v })} />
+          </div>
+          <NotesField label={t('sacks.notes')} value={editForm.notes} onChange={(v) => setEditForm({ ...editForm, notes: v })} />
+          <ErrorBox error={error} />
+          <div className="flex flex-wrap gap-3 mt-3">
+            <button onClick={saveEdit} disabled={saving} className={SAVE_CLS}>{saving ? t('sacks.saving') : t('edit.saveChanges')}</button>
+            {profile.role === 'super_admin' && (
+              <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>
+            )}
+            <button onClick={closeEdit} className={CANCEL_CLS}>{t('common.cancel')}</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white border border-stone-200 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-stone-100 text-stone-600 uppercase tracking-wider text-[10px]">
+            <tr>
+              <th className="px-3 py-2 text-left">{t('sacks.colDate')}</th>
+              <th className="px-3 py-2 text-left">{t('sacks.colShaft')}</th>
+              <th className="px-3 py-2 text-right">{t('sacks.colSacks')}</th>
+              <th className="px-3 py-2 text-left">{t('sacks.colNotes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sackCounts.length === 0 && (
+              <tr><td colSpan="4" className="px-3 py-8 text-center text-stone-400">{t('sacks.none')}</td></tr>
+            )}
+            {sackCounts.map((c) => (
+              <tr key={c.id} className="border-t border-stone-100">
+                <td className="px-3 py-2 text-stone-900 font-medium whitespace-nowrap">
+                  {c.date}
+                  {canEditPrimary(profile, c) && (
+                    <button onClick={() => startEdit(c)} className={EDIT_CLS}>{t('edit.edit')}</button>
+                  )}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">{nameOf(c.shaft_id)}</td>
+                <td className="px-3 py-2 text-right font-medium">{fmtNum(c.sacks, 0)}</td>
+                <td className="px-3 py-2 text-stone-500">{c.notes || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MillingResults({ site, shafts, sackCounts, results, inputs, profile, onRefresh }) {
+  const { t } = useT();
+  const blank = { date: todayISO(), shaft_id: '', sacks_milled: '', gold_g: '', notes: '' };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const formRef = useRef(null);
+  const canAdd = canAddPrimary(profile);
+  const shaftById = useMemo(() => Object.fromEntries(shafts.map((s) => [s.id, s])), [shafts]);
+  const nameOf = (id) => shaftById[id]?.name || '—';
+  const stats = useMemo(() => Object.fromEntries(
+    shaftStats(shafts, sackCounts, results, Number(inputs?.cutoff_g_per_sack)).map((p) => [p.shaft.id, p])),
+  [shafts, sackCounts, results, inputs]);
+  const sackTonnes = Number(inputs?.sack_kg) / 1000;
+  // Sacks still waiting from a pit or shaft, leaving out the result being edited.
+  const waitingFor = (id) => (stats[id]?.waiting || 0) + (editing?.shaft_id === id ? Number(editing.sacks_milled) || 0 : 0);
+
+  const sacks = Number(form.sacks_milled);
+  const gold = Number(form.gold_g);
+  const gps = form.sacks_milled !== '' && form.gold_g !== '' && sacks > 0 && gold >= 0 ? gold / sacks : null;
+  const chosen = shaftById[form.shaft_id];
+
+  const closeEdit = () => {
+    setEditing(null);
+    setError('');
+    setForm(blank);
+  };
+
+  const startEdit = (r) => {
+    setError('');
+    setEditing(r);
+    setForm({ date: r.date, shaft_id: r.shaft_id, sacks_milled: String(r.sacks_milled ?? ''), gold_g: String(r.gold_g ?? ''), notes: r.notes || '' });
+  };
+
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  const handleSave = async () => {
+    setError('');
+    if (!chosen) { setError(t('results.chooseShaft')); return; }
+    if (form.sacks_milled === '' || !Number.isInteger(sacks) || sacks <= 0) { setError(t('results.enterSacks')); return; }
+    if (form.gold_g === '' || !(gold >= 0)) { setError(t('results.enterGold')); return; }
+    const waiting = waitingFor(chosen.id);
+    if (sacks > waiting
+      && !window.confirm(`${t('results.moreThanWaiting')} (${t('results.waiting')}: ${fmtNum(waiting, 0)}).\n${t('results.saveAnyway')}`)) return;
+    setSaving(true);
+    const fields = { date: form.date, shaft_id: chosen.id, sacks_milled: sacks, gold_g: gold, notes: form.notes || null };
+    if (editing) {
+      // An edit changes only this one result and keeps who originally entered it.
+      const { data, error } = await supabase.from('milling_results')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', editing.id)
+        .select();
+      setSaving(false);
+      if (error) { setError(error.message); return; }
+      if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+      closeEdit();
+    } else {
+      const { error } = await supabase.from('milling_results').insert({ ...fields, site_id: site.id, logged_by: profile.id });
+      setSaving(false);
+      if (error) { setError(error.message); return; }
+      setForm({ ...blank, date: form.date });
+    }
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`${t('results.confirmDelete')}\n${editing.date} · ${nameOf(editing.shaft_id)} · ${fmtNum(editing.gold_g, 1)} g`)) return;
+    setError('');
+    setSaving(true);
+    const { data, error } = await supabase.from('milling_results').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeEdit();
+    onRefresh();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('results.title')}</div>
+        <div className="text-sm text-stone-600">
+          {results.length} {t('results.entries')} · {fmtNum(sumOf(results, 'gold_g'), 1)} g · {fmtNum(sumOf(results, 'sacks_milled'), 0)} {t('tile.sacks')}
+        </div>
+      </div>
+
+      {(canAdd || editing) && (shafts.length === 0 ? (
+        <div className="bg-white border border-stone-200 px-4 py-3 text-sm text-stone-500">{t('sacks.noShafts')}</div>
+      ) : (
+        <div ref={formRef} className="bg-white border border-stone-200 p-4">
+          {editing && (
+            <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('results.editing')} {editing.date}</div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label={t('results.date')} type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+            <div>
+              <label className={LABEL_CLS}>{t('results.shaft')}</label>
+              <select value={form.shaft_id} onChange={(e) => setForm({ ...form, shaft_id: e.target.value })} className={INPUT_CLS}>
+                <option value="">{t('results.choose')}</option>
+                {[...shafts].sort(openFirst).map((s) => (
+                  <option key={s.id} value={s.id}>{s.name} · {fmtNum(waitingFor(s.id), 0)} {t('results.waiting')}</option>
+                ))}
+              </select>
+            </div>
+            <Field label={t('results.sacksMilled')} type="number" value={form.sacks_milled} onChange={(v) => setForm({ ...form, sacks_milled: v })} />
+            <Field label={t('results.gold')} type="number" value={form.gold_g} onChange={(v) => setForm({ ...form, gold_g: v })} />
+          </div>
+          <div className="bg-stone-50 border border-stone-200 px-3 py-2 mt-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm font-semibold text-stone-900">
+              {gps !== null ? `${fmtNum(gps, 2)} ${t('results.perSack')} · ${fmtNum(gps / sackTonnes, 1)} g/t` : '—'}
+            </div>
+            {chosen && <PhaseBadge phase={resultPhase(chosen, form.date)} />}
+          </div>
+          <NotesField label={t('results.notes')} value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
+          <ErrorBox error={error} />
+          <div className="flex flex-wrap gap-3 mt-3">
+            <button onClick={handleSave} disabled={saving} className={SAVE_CLS}>
+              {saving ? t('results.saving') : editing ? t('edit.saveChanges') : t('results.save')}
+            </button>
+            {editing && profile.role === 'super_admin' && (
+              <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>
+            )}
+            {editing && <button onClick={closeEdit} className={CANCEL_CLS}>{t('common.cancel')}</button>}
+          </div>
+        </div>
+      ))}
+
+      <div className="bg-white border border-stone-200 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-stone-100 text-stone-600 uppercase tracking-wider text-[10px]">
+            <tr>
+              <th className="px-3 py-2 text-left">{t('results.colDate')}</th>
+              <th className="px-3 py-2 text-left">{t('results.colShaft')}</th>
+              <th className="px-3 py-2 text-right">{t('results.colSacks')}</th>
+              <th className="px-3 py-2 text-right">{t('results.colGold')}</th>
+              <th className="px-3 py-2 text-right">{t('results.colGps')}</th>
+              <th className="px-3 py-2 text-left">{t('results.colPhase')}</th>
+              <th className="px-3 py-2 text-left">{t('results.colNotes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.length === 0 && (
+              <tr><td colSpan="7" className="px-3 py-8 text-center text-stone-400">{t('results.none')}</td></tr>
+            )}
+            {results.map((r) => (
+              <tr key={r.id} className="border-t border-stone-100">
+                <td className="px-3 py-2 text-stone-900 font-medium whitespace-nowrap">
+                  {r.date}
+                  {canEditPrimary(profile, r) && (
+                    <button onClick={() => startEdit(r)} className={EDIT_CLS}>{t('edit.edit')}</button>
+                  )}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">{nameOf(r.shaft_id)}</td>
+                <td className="px-3 py-2 text-right">{fmtNum(r.sacks_milled, 0)}</td>
+                <td className="px-3 py-2 text-right font-medium text-amber-700">{fmtNum(r.gold_g, 1)}</td>
+                <td className="px-3 py-2 text-right">{Number(r.sacks_milled) > 0 ? fmtNum(r.gold_g / r.sacks_milled, 2) : '—'}</td>
+                <td className="px-3 py-2"><PhaseBadge phase={resultPhase(shaftById[r.shaft_id], r.date)} /></td>
+                <td className="px-3 py-2 text-stone-500">{r.notes || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ExcavatorLogs({ site, logs, inputs, transactions, profile, onRefresh }) {
+  const { t } = useT();
+  const blank = { date: todayISO(), exploration_hrs: '', production_hrs: '', idle_hrs: '', excavator_fuel_barrels: '', mill_fuel_barrels: '', notes: '' };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const formRef = useRef(null);
+  const canAdd = canAddPrimary(profile);
+  // Fuel and machine hours left right now, from the same calculation as the Dashboard.
+  const now = useMemo(() => primarySnap(inputs, [], [], [], logs, transactions), [inputs, logs, transactions]);
+
+  const num = (v) => Number(v) || 0;
+  const hoursOf = (r) => num(r.exploration_hrs) + num(r.production_hrs) + num(r.idle_hrs);
+  const barrelsOf = (r) => num(r.excavator_fuel_barrels) + num(r.mill_fuel_barrels);
+  // When editing, the day's old numbers are already counted in what is left.
+  const hoursAfter = now ? now.machineHrsRemaining - hoursOf(form) + (editing ? hoursOf(editing) : 0) : 0;
+  const fuelAfter = now ? now.fuelRemainingBarrels - barrelsOf(form) + (editing ? barrelsOf(editing) : 0) : 0;
+
+  const closeEdit = () => {
+    setEditing(null);
+    setError('');
+    setForm(blank);
+  };
+
+  const startEdit = (l) => {
+    setError('');
+    setEditing(l);
+    setForm({
+      date: l.date, notes: l.notes || '',
+      ...Object.fromEntries(EXCAVATOR_FIELDS.map((k) => [k, String(l[k] ?? '')])),
+    });
+  };
+
+  useEffect(() => {
+    if (editing) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [editing]);
+
+  const handleSave = async () => {
+    setError('');
+    if (EXCAVATOR_FIELDS.some((k) => Number(form[k]) < 0)) { setError(t('exc.noNegative')); return; }
+    if (EXCAVATOR_FIELDS.every((k) => !(Number(form[k]) > 0))) { setError(t('exc.enterSomething')); return; }
+    // A second entry for the same day (another shift) is allowed, but asked about first.
+    const sameDay = logs.some((l) => l.id !== editing?.id && l.date === form.date);
+    if (sameDay && (!editing || editing.date !== form.date) && !window.confirm(t('exc.dateTaken'))) return;
+    setSaving(true);
+    const fields = { date: form.date, notes: form.notes || null, ...Object.fromEntries(EXCAVATOR_FIELDS.map((k) => [k, num(form[k])])) };
+    if (editing) {
+      // An edit changes only this one day and keeps who originally entered it.
+      const { data, error } = await supabase.from('excavator_logs')
+        .update({ ...fields, updated_at: new Date().toISOString() })
+        .eq('id', editing.id)
+        .select();
+      setSaving(false);
+      if (error) { setError(error.message); return; }
+      if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    } else {
+      const { error } = await supabase.from('excavator_logs').insert({ ...fields, site_id: site.id, logged_by: profile.id });
+      setSaving(false);
+      if (error) { setError(error.message); return; }
+    }
+    closeEdit();
+    onRefresh();
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`${t('exc.confirmDelete')}\n${editing.date}`)) return;
+    setError('');
+    setSaving(true);
+    const { data, error } = await supabase.from('excavator_logs').delete().eq('id', editing.id).select();
+    setSaving(false);
+    if (error) { setError(error.message); return; }
+    if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
+    closeEdit();
+    onRefresh();
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-stone-500">{t('exc.title')}</div>
+        <div className="text-sm text-stone-600">{logs.length} {t('exc.entries')}</div>
+      </div>
+
+      {(canAdd || editing) && (
+        <div ref={formRef} className="bg-white border border-stone-200 p-4">
+          {editing && (
+            <div className="text-[10px] uppercase tracking-widest text-amber-800 mb-3">{t('exc.editing')} {editing.date}</div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label={t('exc.date')} type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+            <Field label={t('exc.exploration')} type="number" value={form.exploration_hrs} onChange={(v) => setForm({ ...form, exploration_hrs: v })} />
+            <Field label={t('exc.production')} type="number" value={form.production_hrs} onChange={(v) => setForm({ ...form, production_hrs: v })} />
+            <Field label={t('exc.idle')} type="number" value={form.idle_hrs} onChange={(v) => setForm({ ...form, idle_hrs: v })} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <Field label={t('exc.fuelExcavator')} type="number" value={form.excavator_fuel_barrels} onChange={(v) => setForm({ ...form, excavator_fuel_barrels: v })} />
+            <Field label={t('exc.fuelMill')} type="number" value={form.mill_fuel_barrels} onChange={(v) => setForm({ ...form, mill_fuel_barrels: v })} />
+          </div>
+          {now && (
+            <div className="bg-stone-50 border border-stone-200 px-3 py-2 mt-3 text-xs text-stone-700 space-y-0.5">
+              <div>
+                {fmtNum(hoursOf(form), 1)} {t('exc.hoursToday')} · {t('exc.hoursLeft')} {fmtNum(now.machineHrsRemaining, 0)} →{' '}
+                <span className={`font-semibold ${hoursAfter < 100 ? 'text-red-700' : 'text-stone-900'}`}>{fmtNum(hoursAfter, 0)}</span>
+              </div>
+              <div>
+                {fmtBarrels(barrelsOf(form))} {t('exc.barrelsToday')} · {t('exc.fuelLeft')} {fmtBarrels(now.fuelRemainingBarrels)} →{' '}
+                <span className={`font-semibold ${fuelAfter < 7 ? 'text-red-700' : 'text-stone-900'}`}>{fmtBarrels(fuelAfter)}</span>
+              </div>
+            </div>
+          )}
+          <NotesField label={t('exc.notes')} value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} />
+          <ErrorBox error={error} />
+          <div className="flex flex-wrap gap-3 mt-3">
+            <button onClick={handleSave} disabled={saving} className={SAVE_CLS}>
+              {saving ? t('exc.saving') : editing ? t('edit.saveChanges') : t('exc.save')}
+            </button>
+            {editing && profile.role === 'super_admin' && (
+              <button onClick={handleDelete} disabled={saving} className={DELETE_CLS}>{t('edit.delete')}</button>
+            )}
+            {editing && <button onClick={closeEdit} className={CANCEL_CLS}>{t('common.cancel')}</button>}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white border border-stone-200 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-stone-100 text-stone-600 uppercase tracking-wider text-[10px]">
+            <tr>
+              <th className="px-3 py-2 text-left">{t('exc.colDate')}</th>
+              <th className="px-3 py-2 text-right">{t('exc.colExpl')}</th>
+              <th className="px-3 py-2 text-right">{t('exc.colProd')}</th>
+              <th className="px-3 py-2 text-right">{t('exc.colIdle')}</th>
+              <th className="px-3 py-2 text-right font-semibold">{t('exc.colTotal')}</th>
+              <th className="px-3 py-2 text-right">{t('exc.colFuelExc')}</th>
+              <th className="px-3 py-2 text-right">{t('exc.colFuelMill')}</th>
+              <th className="px-3 py-2 text-left">{t('exc.colNotes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {logs.length === 0 && (
+              <tr><td colSpan="8" className="px-3 py-8 text-center text-stone-400">{t('exc.none')}</td></tr>
+            )}
+            {logs.map((l) => (
+              <tr key={l.id} className="border-t border-stone-100">
+                <td className="px-3 py-2 text-stone-900 font-medium whitespace-nowrap">
+                  {l.date}
+                  {canEditPrimary(profile, l) && (
+                    <button onClick={() => startEdit(l)} className={EDIT_CLS}>{t('edit.edit')}</button>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right">{fmtNum(l.exploration_hrs, 1)}</td>
+                <td className="px-3 py-2 text-right">{fmtNum(l.production_hrs, 1)}</td>
+                <td className="px-3 py-2 text-right text-stone-400">{l.idle_hrs > 0 ? fmtNum(l.idle_hrs, 1) : '—'}</td>
+                <td className="px-3 py-2 text-right font-semibold">{fmtNum(hoursOf(l), 1)}</td>
+                <td className="px-3 py-2 text-right">{fmtBarrels(l.excavator_fuel_barrels)}</td>
+                <td className="px-3 py-2 text-right">{fmtBarrels(l.mill_fuel_barrels)}</td>
+                <td className="px-3 py-2 text-stone-500">{l.notes || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1610,10 +2826,10 @@ function Field({ label, type = 'text', value, onChange }) {
 // ============================================================
 // TRANSACTIONS
 // ============================================================
-function Transactions({ site, transactions, profile, onRefresh }) {
+function Transactions({ site, transactions, profile, onRefresh, expenseCategories = CATEGORIES }) {
   const { t } = useT();
   const [showForm, setShowForm] = useState(false);
-  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: 'Fuel', paid_by: '', notes: '', gold_grams_sold: '', fuel_barrels_topped_up: '', machine_hrs_topped_up: '' };
+  const emptyForm = { date: todayISO(), amount: '', type: 'expense', category: expenseCategories[0], paid_by: '', notes: '', gold_grams_sold: '', fuel_barrels_topped_up: '', machine_hrs_topped_up: '' };
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1676,7 +2892,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
   };
 
   const handleTypeChange = (newType) => {
-    setForm({ ...form, type: newType, category: newType === 'credit' ? 'Gold Sale' : 'Fuel', gold_grams_sold: '' });
+    setForm({ ...form, type: newType, category: newType === 'credit' ? 'Gold Sale' : expenseCategories[0], gold_grams_sold: '' });
   };
 
   const handleSave = async () => {
@@ -1717,7 +2933,7 @@ function Transactions({ site, transactions, profile, onRefresh }) {
     return { exp, cr };
   }, [transactions]);
 
-  const categoryList = form.type === 'credit' ? CREDIT_CATEGORIES : CATEGORIES;
+  const categoryList = form.type === 'credit' ? CREDIT_CATEGORIES : expenseCategories;
   // Keep an older entry's category selectable when editing, even if it is no longer in the list.
   const categoryOptions = categoryList.includes(form.category) ? categoryList : [...categoryList, form.category];
 
@@ -1877,6 +3093,7 @@ function Inputs({ site, inputs, profile, onRefresh }) {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState('');
+  const primary = isPrimarySite(site);
 
   useEffect(() => { setForm(inputs); }, [inputs]);
 
@@ -1884,6 +3101,7 @@ function Inputs({ site, inputs, profile, onRefresh }) {
 
   const handleSave = async () => {
     setError('');
+    if (primary && !(Number(form.sack_kg) > 0)) { setError(t('inputs.sackKgPositive')); return; }
     setSaving(true);
     const { error } = await supabase
       .from('inputs')
@@ -1901,6 +3119,12 @@ function Inputs({ site, inputs, profile, onRefresh }) {
         fuel_per_barrel: Number(form.fuel_per_barrel),
         cleaning_fuel_rate: Number(form.cleaning_fuel_rate),
         prep_fuel_rate: Number(form.prep_fuel_rate),
+        // Only primary sites have these settings.
+        ...(primary ? {
+          sack_kg: Number(form.sack_kg),
+          cutoff_g_per_sack: Number(form.cutoff_g_per_sack),
+          excavator_on: !!form.excavator_on,
+        } : {}),
         updated_at: new Date().toISOString(),
         updated_by: profile.id,
       })
@@ -1946,6 +3170,21 @@ function Inputs({ site, inputs, profile, onRefresh }) {
       ],
     },
   ];
+  // A primary site hides the alluvial-only settings; opening fuel and machine hours show only with the excavator on.
+  const alluvialOnly = ['fuel_price', 'rental_rate', 'cleaning_fuel_rate', 'prep_fuel_rate', 'fuel_per_barrel', 'efficiency_threshold'];
+  const excavatorOnly = ['machine_hrs_opening', 'fuel_barrels_opening'];
+  const shownGroups = !primary ? groups : [
+    ...groups
+      .map((g) => ({ ...g, fields: g.fields.filter((f) => !alluvialOnly.includes(f.key) && (form.excavator_on || !excavatorOnly.includes(f.key))) }))
+      .filter((g) => g.fields.length > 0),
+    {
+      titleKey: 'inputs.primaryMining',
+      fields: [
+        { key: 'sack_kg', label: t('inputs.sackKg'), unit: 'kg' },
+        { key: 'cutoff_g_per_sack', label: t('inputs.cutoff'), unit: 'g/sack' },
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -1957,7 +3196,18 @@ function Inputs({ site, inputs, profile, onRefresh }) {
         {savedAt && <div className="text-[10px] text-emerald-700 uppercase tracking-widest">{t('lang.saved')} {savedAt.toLocaleTimeString()}</div>}
       </div>
 
-      {groups.map((g) => (
+      {primary && (
+        <label className="bg-white border border-stone-200 px-4 py-3 flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" checked={!!form.excavator_on} onChange={(e) => setForm({ ...form, excavator_on: e.target.checked })}
+            className="mt-0.5 w-4 h-4 accent-amber-700 flex-shrink-0" />
+          <div>
+            <div className="text-xs uppercase tracking-widest text-stone-900 font-semibold">{t('inputs.excavatorOn')}</div>
+            <div className="text-xs text-stone-500 mt-0.5">{t('inputs.excavatorHelp')}</div>
+          </div>
+        </label>
+      )}
+
+      {shownGroups.map((g) => (
         <div key={g.titleKey} className="bg-white border border-stone-200">
           <div className="bg-stone-100 px-4 py-2 text-[10px] uppercase tracking-widest text-stone-600 font-semibold">{t(g.titleKey)}</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4">
@@ -1990,7 +3240,8 @@ function Inputs({ site, inputs, profile, onRefresh }) {
         {saving ? t('inputs.saving') : t('inputs.saveAll')}
       </button>
 
-      <TelegramSettings site={site} profile={profile} />
+      {/* Telegram reports are not built for primary sites yet, so a channel can't be connected to one. */}
+      {!primary && <TelegramSettings site={site} profile={profile} />}
     </div>
   );
 }
@@ -2165,17 +3416,20 @@ function TelegramSettings({ site, profile }) {
 // SITE PICKER
 // ============================================================
 function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
+  const { t } = useT();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', location: '' });
+  const [form, setForm] = useState({ name: '', location: '', site_type: 'alluvial' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const handleCreate = async () => {
     setError('');
     setSaving(true);
+    // The site type is only sent for primary sites; new sites are alluvial by default.
+    const primary = form.site_type === 'primary';
     const { data: newSite, error: sErr } = await supabase
       .from('sites')
-      .insert({ name: form.name.trim(), location: form.location.trim() })
+      .insert({ name: form.name.trim(), location: form.location.trim(), ...(primary ? { site_type: 'primary' } : {}) })
       .select()
       .single();
     if (sErr) { setError(sErr.message); setSaving(false); return; }
@@ -2187,10 +3441,11 @@ function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
       opening_cash: 0, machine_hrs_opening: 0,
       fuel_barrels_opening: 0, fuel_per_barrel: 200,
       cleaning_fuel_rate: 25, prep_fuel_rate: 20,
+      ...(primary ? { sack_kg: 25, cutoff_g_per_sack: 0.4, excavator_on: false } : {}),
     });
     setSaving(false);
     setShowCreate(false);
-    setForm({ name: '', location: '' });
+    setForm({ name: '', location: '', site_type: 'alluvial' });
     await onRefreshSites();
     onSelect(newSite);
   };
@@ -2246,11 +3501,17 @@ function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
             <div key={s.id} className="w-full text-left bg-white border border-stone-200 px-5 py-4 hover:border-amber-700 hover:bg-amber-50 transition-colors group cursor-pointer" onClick={() => onSelect(s)}>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-stone-900 group-hover:text-amber-800">{s.name}</div>
+                  <div className="text-sm font-semibold text-stone-900 group-hover:text-amber-800">
+                    {s.name}
+                    {isPrimarySite(s) && (
+                      <span className="ml-2 align-middle text-[10px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-50 text-amber-800 font-normal">{t('site.primaryTag')}</span>
+                    )}
+                  </div>
                   {s.location && <div className="text-[10px] uppercase tracking-widest text-stone-500 mt-0.5">{s.location}</div>}
                 </div>
                 <div className="flex items-center gap-4">
-                  {profile?.role === 'super_admin' && (
+                  {/* Cloning copies daily logs and the statement only, so it is not offered for primary sites. */}
+                  {profile?.role === 'super_admin' && !isPrimarySite(s) && (
                     <button onClick={(e) => { e.stopPropagation(); handleClone(s); }} className="text-stone-400 hover:text-amber-700 text-[10px] uppercase tracking-widest px-2 py-1 border border-stone-200 hover:border-amber-700 bg-white">
                       Clone
                     </button>
@@ -2289,6 +3550,16 @@ function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
                       placeholder="e.g. Oromia Region"
                       className="w-full border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-amber-700" />
                   </div>
+                  <div>
+                    <div className="block text-[10px] uppercase tracking-widest text-stone-500 mb-1">{t('site.type')}</div>
+                    {['alluvial', 'primary'].map((type) => (
+                      <label key={type} className="flex items-center gap-2 py-1 text-sm text-stone-700 cursor-pointer">
+                        <input type="radio" name="site_type" value={type} checked={form.site_type === type}
+                          onChange={() => setForm({ ...form, site_type: type })} className="accent-amber-700" />
+                        {t(`site.${type}`)}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 {error && <div className="text-xs text-red-700 bg-red-50 border border-red-200 px-3 py-2 mt-3">{error}</div>}
                 <div className="flex gap-2 mt-3">
@@ -2296,7 +3567,7 @@ function SitePicker({ sites, profile, onSelect, onRefreshSites }) {
                     className="bg-amber-700 text-white px-6 py-2 text-xs uppercase tracking-widest hover:bg-amber-800 disabled:bg-stone-400">
                     {saving ? 'Creating…' : 'Create Site'}
                   </button>
-                  <button onClick={() => { setShowCreate(false); setError(''); setForm({ name: '', location: '' }); }}
+                  <button onClick={() => { setShowCreate(false); setError(''); setForm({ name: '', location: '', site_type: 'alluvial' }); }}
                     className="px-6 py-2 text-xs uppercase tracking-widest text-stone-600 hover:text-stone-900 border border-stone-300">
                     Cancel
                   </button>
@@ -2321,6 +3592,10 @@ export default function App() {
   const [inputs, setInputs] = useState(null);
   const [logs, setLogs] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [shafts, setShafts] = useState([]);
+  const [sackCounts, setSackCounts] = useState([]);
+  const [millingResults, setMillingResults] = useState([]);
+  const [excavatorLogs, setExcavatorLogs] = useState([]);
   const [page, setPage] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState('');
@@ -2395,17 +3670,40 @@ export default function App() {
   // Load site data
   const refreshSiteData = async () => {
     if (!site) return;
-    const [inputsR, logsR, txR] = await Promise.all([
+    const primary = isPrimarySite(site);
+    const [inputsR, logsR, txR, shaftsR, sacksR, resultsR, excavatorR] = await Promise.all([
       supabase.from('inputs').select('*').eq('site_id', site.id).maybeSingle(),
       supabase.from('daily_logs').select('*').eq('site_id', site.id).order('date', { ascending: false }),
       supabase.from('transactions').select('*').eq('site_id', site.id).order('date', { ascending: false }),
+      // Only primary sites read these tables.
+      ...(primary ? [
+        supabase.from('shafts').select('*').eq('site_id', site.id).order('name'),
+        supabase.from('sack_counts').select('*').eq('site_id', site.id).order('date', { ascending: false }),
+        supabase.from('milling_results').select('*').eq('site_id', site.id).order('date', { ascending: false }),
+        supabase.from('excavator_logs').select('*').eq('site_id', site.id).order('date', { ascending: false }),
+      ] : []),
     ]);
     setInputs(inputsR.data);
     setLogs(logsR.data || []);
     setTransactions(txR.data || []);
+    setShafts(shaftsR?.data || []);
+    setSackCounts(sacksR?.data || []);
+    setMillingResults(resultsR?.data || []);
+    setExcavatorLogs(excavatorR?.data || []);
   };
 
   useEffect(() => { refreshSiteData(); }, [site]);
+
+  // Alluvial and primary sites have different tabs: after switching sites, or turning the
+  // excavator off, go to the Dashboard if the open tab isn't there.
+  useEffect(() => {
+    if (!site) return;
+    const pages = isPrimarySite(site)
+      ? ['shafts', 'sacks', 'results', ...(inputs && !inputs.excavator_on ? [] : ['excavator'])]
+      : ['daily', 'weekly'];
+    const shared = ['dashboard', 'transactions', 'history', 'inputs', 'language'];
+    if (!shared.includes(page) && !pages.includes(page)) setPage('dashboard');
+  }, [site, inputs, page]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -2461,6 +3759,8 @@ export default function App() {
     );
   }
 
+  const primary = isPrimarySite(site);
+
   return (
     <LocaleProvider>
       <Shell
@@ -2472,12 +3772,35 @@ export default function App() {
         page={page}
         setPage={setPage}
         onLogout={handleLogout}
+        excavatorOn={!!inputs?.excavator_on}
       >
-        {page === 'dashboard' && <Dashboard site={site} inputs={inputs} logs={logs} transactions={transactions} />}
-        {page === 'daily' && <DailyLogs site={site} logs={logs} profile={profile} onRefresh={refreshSiteData} />}
-        {page === 'transactions' && <Transactions site={site} transactions={transactions} profile={profile} onRefresh={refreshSiteData} />}
-        {page === 'weekly' && <WeeklyReport inputs={inputs} logs={logs} transactions={transactions} />}
-        {page === 'history' && <ChangeHistory site={site} />}
+        {page === 'dashboard' && !primary && <Dashboard site={site} inputs={inputs} logs={logs} transactions={transactions} />}
+        {page === 'dashboard' && primary && (
+          <PrimaryDashboard inputs={inputs} shafts={shafts} sackCounts={sackCounts} results={millingResults}
+            excavatorLogs={excavatorLogs} transactions={transactions} />
+        )}
+        {page === 'daily' && !primary && <DailyLogs site={site} logs={logs} profile={profile} onRefresh={refreshSiteData} />}
+        {page === 'shafts' && primary && (
+          <Shafts site={site} shafts={shafts} sackCounts={sackCounts} results={millingResults} inputs={inputs}
+            profile={profile} onRefresh={refreshSiteData} />
+        )}
+        {page === 'sacks' && primary && (
+          <SackCounts site={site} shafts={shafts} sackCounts={sackCounts} profile={profile} onRefresh={refreshSiteData} />
+        )}
+        {page === 'results' && primary && (
+          <MillingResults site={site} shafts={shafts} sackCounts={sackCounts} results={millingResults} inputs={inputs}
+            profile={profile} onRefresh={refreshSiteData} />
+        )}
+        {page === 'excavator' && primary && inputs?.excavator_on && (
+          <ExcavatorLogs site={site} logs={excavatorLogs} inputs={inputs} transactions={transactions}
+            profile={profile} onRefresh={refreshSiteData} />
+        )}
+        {page === 'transactions' && (
+          <Transactions site={site} transactions={transactions} profile={profile} onRefresh={refreshSiteData}
+            expenseCategories={primary ? primaryCategories(!!inputs?.excavator_on) : undefined} />
+        )}
+        {page === 'weekly' && !primary && <WeeklyReport inputs={inputs} logs={logs} transactions={transactions} />}
+        {page === 'history' && <ChangeHistory site={site} shafts={shafts} />}
         {page === 'inputs' && profile.role === 'super_admin' && <Inputs site={site} inputs={inputs} profile={profile} onRefresh={refreshSiteData} />}
         {page === 'language' && profile.role === 'super_admin' && <TranslationsAdmin profile={profile} />}
       </Shell>

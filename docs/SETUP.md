@@ -51,6 +51,44 @@ Changes to the live database are kept as numbered SQL files in `docs/migrations/
 3. Never edit a file that has already been run. Add a new numbered file instead.
 4. Each file ends with commented-out UNDO steps in case a change has to be reversed.
 
+## Primary sites
+
+A site is either **alluvial** (excavator, washing, daily logs) or **primary** (hard rock:
+pits and shafts, sacks, our own mill). Every existing site is alluvial and works as before.
+
+1. Run `docs/migrations/006_primary_mining.sql` once in Supabase → SQL Editor. Every check
+   row must say `true`. The app works before and after it is run.
+2. As super admin, choose **+ New Site → Site Type → Primary**. Assign site managers and
+   partners to the site the same way as for any other site.
+3. In **Inputs**, set the gold price, landowner share, opening cash, target cash reserve,
+   **Sack Weight** (25 kg) and **Production Cut-off** (0.4 g per sack).
+4. If the site uses an excavator, tick **Excavator on this site** and enter the opening
+   fuel stock (barrels) and opening machine hours. This adds the **Excavator** tab, the
+   fuel and machine-hour tiles and warnings, and the **Fuel** (barrels received) and
+   **Machine Rental** (hours added) expense types. The excavator and the mill share one
+   fuel stock: all fuel is bought as Fuel, and each day's barrels used by the excavator and
+   the mill are entered on the Excavator tab.
+
+How the site is run in the app:
+- **Pits & Shafts**: add each excavator pit or hand-dug shaft. Each starts in exploration.
+  **Switch to Production** records the date: results from that date on count as production,
+  earlier ones stay exploration. The app suggests switching when the last 3 results average
+  the cut-off or more. A pit or shaft with sacks or results can't be deleted; close it instead.
+- **Sacks**: at the end of the day, one box per open pit or shaft.
+- **Results**: sacks milled and the grams of gold they gave. The app shows grams per sack,
+  g/t and the phase before saving, and asks first if more sacks are milled than are waiting.
+- **Statement**: as on alluvial sites, with expense types for primary mining.
+- All gold, exploration and production, is split landowner / investors by the landowner
+  share in Inputs (0.30 = 30%), the same as on alluvial sites.
+
+Who can do what: site managers and the super admin add pits, shafts, sack counts, results
+and excavator days. A site manager can change only their own entries (and any pit or shaft
+at their site, to switch or close it). Only the super admin can delete. Financial leads add
+statement entries only; partners can only look. The database enforces all of this.
+
+Telegram reports are not built for primary sites yet, so the Telegram section is hidden in
+their Inputs. Cloning is not offered for primary sites.
+
 ## Telegram reports
 
 Each site can post a daily report and a weekly summary (Sundays, 8 pm) to its own
