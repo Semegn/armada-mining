@@ -86,7 +86,7 @@ How the site is run in the app:
 - **Results**: sacks milled and the grams of gold they gave. The app shows grams per sack,
   g/t and the phase before saving, and asks first if more sacks are milled than are waiting.
 - **Statement**: as on alluvial sites, with expense types for primary mining.
-- The Dashboard has two views. **Money**: cash, unsold gold, costs, profit, the landowner /
+- The Dashboard has two views. **Finance**: cash, unsold gold, costs, profit, the landowner /
   investors split, and fuel and machine hours when the excavator is on. **Geology**: gold
   produced (exploration / production), average grade, sacks waiting, each open pit's phase,
   depth, vein and grade, and the pit comparison graph. Excavator hours are on the Excavator tab.

@@ -577,7 +577,7 @@ const EN_STRINGS = {
   'shafts.useLocation': 'Use my location', 'shafts.locating': 'Finding location…',
   'shafts.locationFailed': 'Could not get the phone location. Allow location for this app, or type the numbers.',
   'shafts.gpsMissing': 'GPS missing — add it with Edit',
-  'dash.money': 'Money', 'dash.geology': 'Geology', 'dash.produced': 'produced',
+  'dash.money': 'Finance', 'dash.geology': 'Geology', 'dash.produced': 'produced',
   'dash.explShort': 'Expl', 'dash.prodShort': 'Prod',
   'shafts.openMap': 'Open in map', 'shafts.depth': 'Depth', 'shafts.veinLostFor': 'Vein lost for', 'shafts.since': 'since',
   'shafts.from': 'from', 'shafts.backDate': 'Back to exploration from', 'shafts.backToExploration': 'Back to Exploration',
