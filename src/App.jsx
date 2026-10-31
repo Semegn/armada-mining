@@ -1918,44 +1918,86 @@ function VeinBadge({ vein }) {
   return <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 whitespace-nowrap ${VEIN_CLS[vein]}`}>{t(`vein.${vein}`)}</span>;
 }
 
-// Shrinks a phone photo to at most 1600 px on its long side, saved as JPEG (about 200–400 KB).
-const shrinkPhoto = (file) => new Promise((resolve, reject) => {
+// Shrinks a phone photo to at most `maxPx` on its long side, saved as JPEG: 1600 px for the
+// photo itself (about 200–400 KB), 240 px for its preview (about 10–20 KB).
+const shrinkPhoto = (file, maxPx = 1600, quality = 0.75) => new Promise((resolve, reject) => {
   const img = new Image();
   const url = URL.createObjectURL(file);
   img.onload = () => {
-    const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(img.width * scale);
     canvas.height = Math.round(img.height * scale);
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
     URL.revokeObjectURL(url);
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not read the photo.'))), 'image/jpeg', 0.75);
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not read the photo.'))), 'image/jpeg', quality);
   };
   img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read the photo.')); };
   img.src = url;
 });
 
+// Each photo is stored with a small preview beside it (photo.jpg → photo.thumb.jpg).
+const thumbPath = (path) => path.replace(/\.jpg$/, '.thumb.jpg');
+const withThumbs = (paths) => paths.flatMap((p) => [p, thumbPath(p)]);
+
 // Sample photos are private files; the app asks Supabase for links that work for an hour.
+// The list shows only the previews; the full photo is downloaded when one is tapped.
+// Photos saved before previews existed show the full photo instead.
 // Photos are never uploaded or read in Demo Mode.
 function SamplePhotos({ paths }) {
-  const [urls, setUrls] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [open, setOpen] = useState(null);
   useEffect(() => {
-    if (isDemoActive() || !paths || paths.length === 0) { setUrls([]); return; }
+    if (isDemoActive() || !paths || paths.length === 0) { setPhotos([]); return; }
     let live = true;
-    realSupabase.storage.from('samples').createSignedUrls(paths, 3600).then(({ data }) => {
-      if (live) setUrls((data || []).map((d) => d.signedUrl).filter(Boolean));
+    realSupabase.storage.from('samples').createSignedUrls(paths.map(thumbPath), 3600).then(({ data }) => {
+      if (live) setPhotos(paths.map((p, i) => ({ path: p, thumb: data?.[i]?.signedUrl || null })));
     });
     return () => { live = false; };
   }, [JSON.stringify(paths)]);
-  if (urls.length === 0) return null;
+  useEffect(() => {
+    if (!open || open.full) return;
+    let live = true;
+    realSupabase.storage.from('samples').createSignedUrl(open.path, 3600).then(({ data }) => {
+      if (live && data?.signedUrl) setOpen((o) => (o && o.path === open.path ? { ...o, full: data.signedUrl } : o));
+    });
+    return () => { live = false; };
+  }, [open?.path]);
+  if (photos.length === 0) return null;
   return (
-    <div className="flex gap-2 flex-wrap mt-2">
-      {urls.map((u) => (
-        <a key={u} href={u} target="_blank" rel="noreferrer">
-          <img src={u} alt="" className="w-20 h-20 object-cover border border-stone-200" />
-        </a>
-      ))}
-    </div>
+    <>
+      <div className="flex gap-2 flex-wrap mt-2">
+        {photos.map((ph) => (
+          <PhotoThumb key={ph.path} photo={ph} onOpen={() => setOpen({ ...ph })} />
+        ))}
+      </div>
+      {open && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setOpen(null)}>
+          <button type="button" className="absolute top-3 right-4 text-white text-3xl leading-none" onClick={() => setOpen(null)}>✕</button>
+          {open.full
+            ? <img src={open.full} alt="" className="max-w-full max-h-full object-contain" />
+            : <img src={open.thumb || ''} alt="" className="max-w-full max-h-full object-contain opacity-60" />}
+        </div>
+      )}
+    </>
+  );
+}
+
+// A preview square. Without a stored preview (older photos) it loads the full photo, lazily.
+function PhotoThumb({ photo, onOpen }) {
+  const [src, setSrc] = useState(photo.thumb);
+  useEffect(() => {
+    if (photo.thumb) { setSrc(photo.thumb); return; }
+    let live = true;
+    realSupabase.storage.from('samples').createSignedUrl(photo.path, 3600).then(({ data }) => {
+      if (live) setSrc(data?.signedUrl || null);
+    });
+    return () => { live = false; };
+  }, [photo.path, photo.thumb]);
+  return (
+    <button type="button" onClick={onOpen} className="w-20 h-20 border border-stone-200 bg-stone-100">
+      {src && <img src={src} alt="" loading="lazy" className="w-20 h-20 object-cover" />}
+    </button>
   );
 }
 
@@ -1987,12 +2029,15 @@ function SamplesPanel({ site, shaft, samples, profile, onRefresh }) {
     for (const file of files) {
       try {
         const blob = await shrinkPhoto(file);
+        const thumb = await shrinkPhoto(file, 240, 0.7);
         const path = `${site.id}/${shaft.id}/${Date.now()}-${uploaded.length}.jpg`;
         const { error: upErr } = await realSupabase.storage.from('samples').upload(path, blob, { contentType: 'image/jpeg' });
         if (upErr) throw upErr;
         uploaded.push(path);
+        const { error: thumbErr } = await realSupabase.storage.from('samples').upload(thumbPath(path), thumb, { contentType: 'image/jpeg' });
+        if (thumbErr) throw thumbErr;
       } catch (e) {
-        if (uploaded.length > 0) await realSupabase.storage.from('samples').remove(uploaded);
+        if (uploaded.length > 0) await realSupabase.storage.from('samples').remove(withThumbs(uploaded));
         setSaving(false);
         setError(`${t('samples.photoFailed')} ${e.message || ''}`);
         return;
@@ -2008,7 +2053,7 @@ function SamplesPanel({ site, shaft, samples, profile, onRefresh }) {
       : await supabase.from('shaft_samples').insert({ ...fields, site_id: site.id, shaft_id: shaft.id, logged_by: profile.id });
     setSaving(false);
     if (err) {
-      if (uploaded.length > 0 && !demo) await realSupabase.storage.from('samples').remove(uploaded);
+      if (uploaded.length > 0 && !demo) await realSupabase.storage.from('samples').remove(withThumbs(uploaded));
       setError(err.message);
       return;
     }
@@ -2024,7 +2069,7 @@ function SamplesPanel({ site, shaft, samples, profile, onRefresh }) {
     setSaving(false);
     if (err) { setError(err.message); return; }
     if (!data || data.length === 0) { setError(t('edit.notSaved')); return; }
-    if (!demo && editing.photo_paths?.length) await realSupabase.storage.from('samples').remove(editing.photo_paths);
+    if (!demo && editing.photo_paths?.length) await realSupabase.storage.from('samples').remove(withThumbs(editing.photo_paths));
     reset();
     onRefresh();
   };
